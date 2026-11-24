@@ -1,0 +1,20 @@
+{
+  // Opens the project in GitHub Codespaces and starts the whole stack there:
+  // the same `docker compose up` as on a laptop, inside the codespace.
+  "name": "Mini SMS Gateway",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  // Four cores: the stack is ten containers (PostgreSQL, Valkey, API, two
+  // dispatchers, webhook worker, mock carrier, webhook sink, dashboard, migrate).
+  "hostRequirements": { "cpus": 4, "memory": "8gb" },
+  "postStartCommand": "docker compose up --build --detach --wait --wait-timeout 600",
+  "forwardPorts": [3000, 8000, 9000, 9100],
+  "portsAttributes": {
+    "3000": { "label": "Dashboard", "onAutoForward": "openPreview" },
+    "8000": { "label": "Gateway API (docs at /docs)", "onAutoForward": "silent" },
+    "9000": { "label": "Mock carrier (/stats)", "onAutoForward": "silent" },
+    "9100": { "label": "Webhook sink (/stats)", "onAutoForward": "silent" }
+  }
+}

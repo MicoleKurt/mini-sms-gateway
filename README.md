@@ -35,6 +35,13 @@ and the dashboard.
 | Mock carrier statistics | http://localhost:9000/stats |
 | Webhook sink statistics | http://localhost:9100/stats |
 
+No Docker at hand? The same stack runs in a GitHub Codespace. It builds and
+starts by itself (about three minutes the first time) and opens the dashboard:
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/MicoleKurt/mini-sms-gateway?quickstart=1)
+
+In a codespace the load test runs from its terminal: `docker compose run --rm loadtest`.
+
 Seed data (development values for a local demo, not secrets):
 
 | Tenant | API key | Opening balance |
