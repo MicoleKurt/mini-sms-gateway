@@ -1,28 +1,45 @@
 "use client";
 
-import { SendHorizontal, TriangleExclamationPoint } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { ApiError, describeError } from "@/lib/api/client";
 import { usePrices, useTenants } from "@/lib/api/hooks";
 import type { AcceptedMessage } from "@/lib/api/schemas";
-import { formatMoney } from "@/lib/format";
 import { analyze } from "@/lib/sms-encoding";
 import {
+  MAX_SEGMENTS,
   validateClientRef,
   validateDestination,
   validateSender,
   validateText,
 } from "@/lib/validation";
-import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader } from "@/components/ui/card";
-import { Field, Input, Select, Textarea, fieldMessageId } from "@/components/ui/field";
-import { LoadingLabel, Skeleton } from "@/components/ui/skeleton";
-import { Alert, EmptyState, ErrorState, RefreshFailedNotice } from "@/components/ui/states";
-import { PreviewPanel, lookUpPrice } from "./preview-panel";
-import { ResultCard } from "./result-card";
+import { Field, Input, Select, fieldMessageId } from "@/components/ui/field";
+import { Money } from "@/components/ui/figures";
+import { Section } from "@/components/ui/section";
+import {
+  Alert,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  RefreshFailedNotice,
+} from "@/components/ui/states";
+import { MarkedTextarea } from "./marked-textarea";
+import { Preview } from "./preview";
+import { lookUpPrice } from "./price-lookup";
+import { ResultLine } from "./result-line";
+import {
+  ENCODING_NAME,
+  amountWords,
+  UNIT_NAME,
+  destinationHint,
+  sendButtonLabel,
+  sendHeadline,
+  senderHint,
+} from "./send-copy";
+import { explainUcs2 } from "./ucs2-cause";
 import { fingerprintOf, useSendMessage, type Draft } from "./use-send-message";
+import styles from "./send.module.css";
 
 /** The fields of the request body, by the names the gateway uses in `details[].field`. */
 const FIELDS = ["to", "from", "text", "client_ref"] as const;
@@ -35,6 +52,8 @@ const FIELD_IDS: Record<FieldName, string> = {
   text: "send-text",
   client_ref: "send-client-ref",
 };
+
+const EMPTY_VALUES: Record<FieldName, string> = { to: "", from: "", text: "", client_ref: "" };
 
 const ERROR_TITLES: Record<string, string> = {
   INSUFFICIENT_BALANCE: "Not enough balance",
@@ -76,17 +95,24 @@ function toDraft(tenantId: string, values: Record<FieldName, string>): Draft {
   };
 }
 
-function FormSkeleton() {
+/** The line under the text: units used, and the encoding with its cause. */
+function TextHint({ text }: { text: string }) {
+  if (text === "") return <>Up to {MAX_SEGMENTS} segments.</>;
+  const { encoding, units } = analyze(text);
+  const causes = explainUcs2(text)?.causes.length ?? 0;
   return (
-    <div className="flex flex-col gap-5 p-4">
-      <LoadingLabel>Loading the form…</LoadingLabel>
-      {["h-8", "h-8", "h-8", "h-28", "h-8"].map((height, index) => (
-        <div key={index} className="flex flex-col gap-1.5">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className={height} />
-        </div>
-      ))}
-    </div>
+    <span className={styles.textFoot}>
+      <span>
+        <span className="num">{units}</span> {UNIT_NAME[encoding]}
+      </span>
+      {causes > 0 ? (
+        <span className="attn">
+          UCS-2 because of {causes === 1 ? "1 character" : `${causes} characters`}
+        </span>
+      ) : (
+        <span>{ENCODING_NAME[encoding]}</span>
+      )}
+    </span>
   );
 }
 
@@ -96,12 +122,7 @@ export function SendView() {
   const { send, forgetKey } = useSendMessage();
 
   const [tenantId, setTenantId] = useState("");
-  const [values, setValues] = useState<Record<FieldName, string>>({
-    to: "",
-    from: "",
-    text: "",
-    client_ref: "",
-  });
+  const [values, setValues] = useState<Record<FieldName, string>>(EMPTY_VALUES);
   const [touched, setTouched] = useState<ReadonlySet<FieldName>>(new Set());
   const [serverErrors, setServerErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [failure, setFailure] = useState<FormFailure | null>(null);
@@ -111,6 +132,7 @@ export function SendView() {
 
   // Until the user picks one, the first tenant is selected.
   const tenant = tenants.data?.find(({ id }) => id === tenantId) ?? tenants.data?.[0];
+  const currency = tenant?.currency ?? "USD";
   const analysis = analyze(values.text);
   const clientErrors: Record<FieldName, string | null> = {
     to: validateDestination(values.to),
@@ -120,7 +142,17 @@ export function SendView() {
   };
   const price = lookUpPrice(prices, values.to, clientErrors.to === null);
   const unsupported = price.state === "unsupported";
+  const headline = sendHeadline({
+    text: values.text,
+    analysis,
+    to: values.to,
+    destinationError: clientErrors.to,
+    price,
+    tenant,
+  });
 
+  const ready =
+    headline.state === "priced" && FIELDS.every((field) => clientErrors[field] === null);
   const draft = tenant ? toDraft(tenant.id, values) : null;
   // The form still holds the message whose result is showing. Submitting it
   // again would be an accidental repeat (a double click, a held Enter key),
@@ -150,6 +182,14 @@ export function SendView() {
 
   function touch(field: FieldName) {
     setTouched((current) => new Set(current).add(field));
+  }
+
+  function reset() {
+    setValues(EMPTY_VALUES);
+    setTouched(new Set());
+    setServerErrors({});
+    setFailure(null);
+    document.getElementById(FIELD_IDS.to)?.focus();
   }
 
   function showFailure(error: unknown) {
@@ -191,14 +231,14 @@ export function SendView() {
 
     setFailure(null);
     setServerErrors({});
-    // The card of the previous message would contradict a failure of this one.
+    // The line of the previous message would contradict a failure of this one.
     setResult(null);
     const fingerprint = fingerprintOf(draft);
     send.mutate(draft, {
       onSuccess: (message) => {
         setResult({ message, fingerprint });
         toast.success("Message accepted", {
-          description: `${message.to}, ${formatMoney(message.cost_micros, message.currency)}`,
+          description: `${message.to}, ${amountWords(message.cost_micros, message.currency)}`,
         });
       },
       onError: showFailure,
@@ -219,158 +259,166 @@ export function SendView() {
   }
 
   return (
-    <>
-      <PageHeader
-        title="Send test message"
-        description="Send one message as a tenant. It goes through the same validation, pricing, charge and queue as the tenant API."
-      />
-
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader title="Message" />
-            {tenants.isPending ? (
-              <FormSkeleton />
-            ) : tenants.isLoadingError ? (
-              <ErrorState
-                title="Tenants could not be loaded"
-                error={tenants.error}
-                onRetry={() => tenants.refetch()}
-              />
-            ) : !tenant ? (
-              <EmptyState
-                title="No tenants"
-                description="The gateway returned an empty tenant list, so there is no one to send as."
-              />
-            ) : (
-              <form onSubmit={submit} noValidate className="flex flex-col gap-3 p-4">
-                {/* The form stays usable when the tenants can not be refreshed. Only the balance may be old. */}
-                <RefreshFailedNotice title="Tenants could not be refreshed" query={tenants} />
-                <Field
-                  htmlFor="send-tenant"
-                  label="Tenant"
-                  hint={
-                    <>
-                      Balance{" "}
-                      <span className="font-mono">
-                        {formatMoney(tenant.balance_micros, tenant.currency)}
-                      </span>
-                    </>
-                  }
+    <Section
+      ruled={false}
+      context="Goes through the real queue and carrier, and is charged to the tenant like any other message."
+    >
+      <div className={styles.layout}>
+        <div>
+          {tenants.isPending ? (
+            <LoadingState label="Loading the form" lines={4} />
+          ) : tenants.isLoadingError ? (
+            <ErrorState
+              title="Tenants could not be loaded"
+              error={tenants.error}
+              onRetry={() => tenants.refetch()}
+            />
+          ) : !tenant ? (
+            <EmptyState
+              title="There are no tenants."
+              description="The gateway returned an empty tenant list, so there is no one to send as."
+            />
+          ) : (
+            <form onSubmit={submit} noValidate className={styles.form} aria-label="Test message">
+              {/* The form stays usable when the tenants can not be refreshed. Only the balance may be old. */}
+              <RefreshFailedNotice title="Tenants could not be refreshed" query={tenants} />
+              <Field
+                htmlFor="send-tenant"
+                label="Tenant"
+                hint={
+                  <>
+                    Balance <Money micros={tenant.balance_micros} currency={tenant.currency} />
+                  </>
+                }
+              >
+                <Select
+                  id="send-tenant"
+                  value={tenant.id}
+                  onChange={(event) => setTenantId(event.target.value)}
+                  aria-describedby={fieldMessageId("send-tenant")}
                 >
-                  <Select
-                    id="send-tenant"
-                    className="w-full"
-                    value={tenant.id}
-                    onChange={(event) => setTenantId(event.target.value)}
-                    aria-describedby={fieldMessageId("send-tenant")}
-                  >
-                    {tenants.data.map(({ id, name }) => (
-                      <option key={id} value={id}>
-                        {name}
-                      </option>
+                  {tenants.data.map(({ id, name }) => (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field
+                htmlFor={FIELD_IDS.from}
+                label="From"
+                hint={senderHint(values.from)}
+                error={errorOf("from")}
+              >
+                <Input
+                  {...control("from")}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="mono"
+                />
+              </Field>
+
+              <Field
+                htmlFor={FIELD_IDS.to}
+                label="To"
+                hint={
+                  clientErrors.to === null
+                    ? destinationHint(price, currency)
+                    : "E.164, for example +8801711000001"
+                }
+                error={errorOf("to")}
+              >
+                <Input
+                  {...control("to")}
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="mono"
+                />
+              </Field>
+
+              <Field
+                htmlFor={FIELD_IDS.text}
+                label="Text"
+                hint={<TextHint text={values.text} />}
+                error={errorOf("text")}
+              >
+                <MarkedTextarea {...control("text")} rows={5} />
+              </Field>
+
+              <Field
+                htmlFor={FIELD_IDS.client_ref}
+                label="Client reference"
+                optional
+                error={errorOf("client_ref")}
+              >
+                <Input
+                  {...control("client_ref")}
+                  placeholder="Echoed back in the webhook"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="mono"
+                />
+              </Field>
+
+              {failure ? (
+                <div ref={failureAlert} tabIndex={-1} role="alert">
+                  <Alert tone="danger" title={failure.title}>
+                    <p>{failure.message}</p>
+                    {failure.other.map((problem) => (
+                      <p key={problem}>{problem}</p>
                     ))}
-                  </Select>
-                </Field>
-
-                <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
-                  <Field
-                    htmlFor={FIELD_IDS.to}
-                    label="To"
-                    hint="E.164, for example +8801711000001"
-                    error={errorOf("to")}
-                  >
-                    <Input
-                      {...control("to")}
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="font-mono"
-                    />
-                  </Field>
-                  <Field
-                    htmlFor={FIELD_IDS.from}
-                    label="From"
-                    hint="Sender ID, for example ACME"
-                    error={errorOf("from")}
-                  >
-                    <Input
-                      {...control("from")}
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="font-mono"
-                    />
-                  </Field>
+                    {failure.canRetrySafely ? (
+                      <p>
+                        You can send again. The same idempotency key is reused, so the message can
+                        not go out twice.
+                      </p>
+                    ) : null}
+                  </Alert>
                 </div>
+              ) : null}
 
-                <Field htmlFor={FIELD_IDS.text} label="Text" error={errorOf("text")}>
-                  <Textarea {...control("text")} rows={5} />
-                </Field>
-
-                <Field
-                  htmlFor={FIELD_IDS.client_ref}
-                  label="Client reference"
-                  optional
-                  error={errorOf("client_ref")}
+              <div className={styles.actions}>
+                {/* Until the draft is priced and valid the button is drawn as an
+                    outline; it still submits, which shows every field's error. */}
+                <Button
+                  ref={submitButton}
+                  type="submit"
+                  variant="primary"
+                  className={ready ? undefined : "is-unready"}
+                  disabled={unsupported}
+                  aria-disabled={send.isPending || alreadySent}
+                  aria-describedby={alreadySent ? "send-status" : "send-consequence"}
                 >
-                  <Input
-                    {...control("client_ref")}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="font-mono"
-                  />
-                </Field>
-
-                {failure ? (
-                  <div ref={failureAlert} tabIndex={-1} role="alert" className="rounded-md">
-                    <Alert
-                      tone="danger"
-                      icon={<TriangleExclamationPoint aria-hidden />}
-                      title={failure.title}
-                    >
-                      <p>{failure.message}</p>
-                      {failure.other.length > 0 ? (
-                        <ul className="mt-1 list-disc pl-4">
-                          {failure.other.map((problem) => (
-                            <li key={problem}>{problem}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                      {failure.canRetrySafely ? (
-                        <p className="mt-1">
-                          You can send again. The same idempotency key is reused, so the message can
-                          not go out twice.
-                        </p>
-                      ) : null}
-                    </Alert>
-                  </div>
+                  {send.isPending
+                    ? "Sending…"
+                    : sendButtonLabel({
+                        analysis,
+                        text: values.text,
+                        to: values.to,
+                        price,
+                        currency,
+                      })}
+                </Button>
+                <Button variant="quiet" onClick={reset}>
+                  Reset
+                </Button>
+                <p id="send-consequence" className={styles.consequence}>
+                  Charged to {tenant.name} now. Refunded if it fails before the carrier.
+                </p>
+                {alreadySent ? (
+                  <p id="send-status" className={styles.consequence}>
+                    Sent. To send the same message again, clear the last send below.
+                  </p>
                 ) : null}
-
-                <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-                  {alreadySent ? (
-                    <p id="send-status" className="text-xs text-ink-muted">
-                      Sent. To send the same message again, clear the result below.
-                    </p>
-                  ) : null}
-                  <Button
-                    ref={submitButton}
-                    type="submit"
-                    variant="primary"
-                    disabled={unsupported}
-                    aria-disabled={send.isPending || alreadySent}
-                    aria-describedby={alreadySent ? "send-status" : undefined}
-                  >
-                    <SendHorizontal aria-hidden />
-                    {send.isPending ? "Sending…" : "Send message"}
-                  </Button>
-                </div>
-              </form>
-            )}
-          </Card>
+              </div>
+            </form>
+          )}
 
           {result ? (
-            <ResultCard
+            <ResultLine
               key={result.message.id}
               message={result.message}
               onClear={alreadySent ? clearResult : undefined}
@@ -378,8 +426,16 @@ export function SendView() {
           ) : null}
         </div>
 
-        <PreviewPanel text={values.text} analysis={analysis} price={price} tenant={tenant} />
+        <Preview
+          headline={headline.sentence}
+          text={values.text}
+          to={values.to}
+          analysis={analysis}
+          price={price}
+          prices={prices}
+          tenant={tenant}
+        />
       </div>
-    </>
+    </Section>
   );
 }
