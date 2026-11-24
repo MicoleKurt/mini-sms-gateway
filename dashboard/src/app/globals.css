@@ -1,0 +1,260 @@
+@import "tailwindcss";
+
+/* next-themes sets class="dark" on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Surfaces and ink are neutral. The only saturated colours are
+ * the seven message statuses and the alert colours, so colour always means
+ * something.
+ */
+:root {
+  --canvas: #f7f7f8;
+  --surface: #ffffff;
+  --raised: #f1f1f3;
+  --line: #e4e4e7;
+  --line-strong: #d1d1d6;
+  /* The edge of an input or a button. Unlike a divider it marks something to
+     operate, so it has at least 3:1 against every surface it sits on. */
+  --control-border: #8a8a94;
+  --ink: #18181b;
+  --ink-muted: #55555e;
+  --ink-faint: #696973;
+  --primary: #18181b;
+  --on-primary: #fafafa;
+  --focus: #2563eb;
+  --flash: #fde68a;
+
+  --danger: #dc2626;
+  --danger-ink: #a11b1b;
+  --danger-tint: #fef2f2;
+  --ok: #1f9d55;
+  --ok-ink: #166534;
+  --ok-tint: #f0fdf4;
+  --warn: #cf7004;
+  --warn-ink: #92400e;
+  --warn-tint: #fffbeb;
+
+  --status-accepted: #64748b;
+  --status-accepted-ink: #334155;
+  --status-accepted-tint: #eef2f6;
+  --status-queued: #cf7004;
+  --status-queued-ink: #92400e;
+  --status-queued-tint: #fef7da;
+  --status-submitted: #2563eb;
+  --status-submitted-ink: #1e40af;
+  --status-submitted-tint: #dbeafe;
+  --status-delivered: #1f9d55;
+  --status-delivered-ink: #166534;
+  --status-delivered-tint: #e4fbec;
+  --status-undelivered: #c2410c;
+  --status-undelivered-ink: #9a3412;
+  --status-undelivered-tint: #ffedd5;
+  --status-expired: #7c3aed;
+  --status-expired-ink: #5b21b6;
+  --status-expired-tint: #ede9fe;
+  --status-failed: #dc2626;
+  --status-failed-ink: #991b1b;
+  --status-failed-tint: #fee2e2;
+
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #0b0b0d;
+  --surface: #131316;
+  --raised: #1b1b1f;
+  --line: #26262b;
+  --line-strong: #36363d;
+  --control-border: #6b6b76;
+  --ink: #ededf0;
+  --ink-muted: #a3a3ad;
+  --ink-faint: #8b8b95;
+  --primary: #ededf0;
+  --on-primary: #0b0b0d;
+  --focus: #60a5fa;
+  --flash: #5c4a14;
+
+  --danger: #ef4444;
+  --danger-ink: #fca5a5;
+  --danger-tint: #2a1215;
+  --ok: #2bb673;
+  --ok-ink: #86efac;
+  --ok-tint: #10231a;
+  --warn: #d4910a;
+  --warn-ink: #fcd34d;
+  --warn-tint: #261d0b;
+
+  --status-accepted: #8492a6;
+  --status-accepted-ink: #cbd5e1;
+  --status-accepted-tint: #1f242c;
+  --status-queued: #d4910a;
+  --status-queued-ink: #fcd34d;
+  --status-queued-tint: #2b2210;
+  --status-submitted: #3b82f6;
+  --status-submitted-ink: #93c5fd;
+  --status-submitted-tint: #16233b;
+  --status-delivered: #2bb673;
+  --status-delivered-ink: #86efac;
+  --status-delivered-tint: #12281e;
+  --status-undelivered: #d9541a;
+  --status-undelivered-ink: #fdba74;
+  --status-undelivered-tint: #2d1a10;
+  --status-expired: #8b5cf6;
+  --status-expired-ink: #c4b5fd;
+  --status-expired-tint: #211a38;
+  --status-failed: #ef4444;
+  --status-failed-ink: #fca5a5;
+  --status-failed-tint: #2e1517;
+
+  color-scheme: dark;
+}
+
+/*
+ * An element with data-status gets that status's three colours. Everything
+ * inside it can then use bg-status, text-status-ink and bg-status-tint.
+ */
+[data-status="ACCEPTED"] {
+  --status: var(--status-accepted);
+  --status-ink: var(--status-accepted-ink);
+  --status-tint: var(--status-accepted-tint);
+}
+[data-status="QUEUED"] {
+  --status: var(--status-queued);
+  --status-ink: var(--status-queued-ink);
+  --status-tint: var(--status-queued-tint);
+}
+[data-status="SUBMITTED"] {
+  --status: var(--status-submitted);
+  --status-ink: var(--status-submitted-ink);
+  --status-tint: var(--status-submitted-tint);
+}
+[data-status="DELIVERED"] {
+  --status: var(--status-delivered);
+  --status-ink: var(--status-delivered-ink);
+  --status-tint: var(--status-delivered-tint);
+}
+[data-status="UNDELIVERED"] {
+  --status: var(--status-undelivered);
+  --status-ink: var(--status-undelivered-ink);
+  --status-tint: var(--status-undelivered-tint);
+}
+[data-status="EXPIRED"] {
+  --status: var(--status-expired);
+  --status-ink: var(--status-expired-ink);
+  --status-tint: var(--status-expired-tint);
+}
+[data-status="FAILED"] {
+  --status: var(--status-failed);
+  --status-ink: var(--status-failed-ink);
+  --status-tint: var(--status-failed-tint);
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-control-border: var(--control-border);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-primary: var(--primary);
+  --color-on-primary: var(--on-primary);
+  --color-focus: var(--focus);
+  --color-flash: var(--flash);
+  --color-danger: var(--danger);
+  --color-danger-ink: var(--danger-ink);
+  --color-danger-tint: var(--danger-tint);
+  --color-ok: var(--ok);
+  --color-ok-ink: var(--ok-ink);
+  --color-ok-tint: var(--ok-tint);
+  --color-warn: var(--warn);
+  --color-warn-ink: var(--warn-ink);
+  --color-warn-tint: var(--warn-tint);
+  --color-status: var(--status);
+  --color-status-ink: var(--status-ink);
+  --color-status-tint: var(--status-tint);
+
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+  --animate-fade-in: fade-in 160ms ease-out;
+
+  @keyframes shimmer {
+    0% {
+      background-position: 100% 0;
+    }
+    100% {
+      background-position: -100% 0;
+    }
+  }
+
+  /* Opacity only: a transform here would replace the one that positions a tooltip. */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+@layer base {
+  html {
+    background-color: var(--canvas);
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Numbers line up in columns everywhere, not only in monospace text. */
+  body,
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--focus) 28%, transparent);
+  }
+}
+
+/*
+ * Base looks that callers adjust with utilities (a width, a smaller font, a
+ * different radius). They live in the components layer, which every utility
+ * overrides whatever the order of the class names.
+ */
+@layer components {
+  .control {
+    @apply w-full rounded-md border border-control-border bg-surface px-2.5 text-sm text-ink placeholder:text-ink-faint disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-danger;
+  }
+
+  .skeleton {
+    @apply block animate-shimmer rounded bg-linear-to-r from-raised via-line to-raised bg-size-[200%_100%];
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
