@@ -1,0 +1,25 @@
+/* The columns have fixed widths (see COLUMNS) and the text column takes the
+   rest. On a narrow screen the table keeps this width and scrolls. */
+.table {
+  table-layout: fixed;
+  min-width: 1040px;
+}
+
+/* Twelve columns share the content width, so figures are set a step down
+   from body size. Words (tenant, text, status) stay at body size. */
+.table :global(td.num) {
+  font-size: var(--t-small);
+}
+
+/* Under 768 px the table scrolls sideways inside its wrapper. Time is pinned
+   on the left (Td pin); the status is held at the right edge until its own
+   column scrolls into view, so both are visible without scrolling. */
+@media (max-width: 767px) {
+  .stuck {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    padding-left: 12px;
+    background: var(--paper);
+  }
+}

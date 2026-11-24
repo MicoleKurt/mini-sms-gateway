@@ -1,65 +1,97 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, type ReactNode } from "react";
+import { Fragment, useCallback, useState, type ReactNode } from "react";
 import type { Message } from "@/lib/api/schemas";
-import { cn } from "@/lib/cn";
+import { formatCount, sharedIdPrefix } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Table, Td, Th } from "@/components/ui/table";
-import { useNow } from "@/lib/use-now";
-import { MessageRow, WIDE_ONLY } from "./message-row";
+import { NoteRow, Table, Td, Th, Tr } from "@/components/ui/table";
+import { arrivedSince, groupByUtcDay } from "./list-format";
+import { MessageRow } from "./message-row";
+import styles from "./messages-table.module.css";
 
 interface Column {
   label: string;
+  /** The full name of a head shortened to fit, for a tooltip and assistive technology. */
+  full?: string;
+  numeric?: boolean;
+  pin?: boolean;
+  /** Held at the right edge while the table scrolls sideways on a phone. */
+  stuck?: boolean;
   /** Width of the placeholder while loading, close to the real content. */
   skeleton: string;
-  align?: "right";
-  wideOnly?: boolean;
+  /** Column width in px, padding included. Text has none: it takes what is left. */
+  width?: number;
 }
 
-// In the order of the cells in MessageRow. Status comes right after the time,
-// so it is on screen on a phone without scrolling sideways.
+// In the order of the cells in MessageRow. Fixed widths, so the columns do
+// not move when the filters change or a row with longer values arrives.
 const COLUMNS: Column[] = [
-  { label: "Time (local)", skeleton: "w-24" },
-  { label: "Status", skeleton: "w-20" },
-  { label: "Tenant", skeleton: "w-24", wideOnly: true },
-  { label: "To", skeleton: "w-28" },
-  { label: "From", skeleton: "w-16", wideOnly: true },
-  { label: "Encoding", skeleton: "w-12", wideOnly: true },
-  { label: "Segments", skeleton: "w-4", align: "right", wideOnly: true },
-  { label: "Cost", skeleton: "w-16", align: "right" },
-  { label: "Attempts", skeleton: "w-4", align: "right" },
+  { label: "Time UTC", pin: true, skeleton: "w-24", width: 104 },
+  { label: "Message", skeleton: "w-24", width: 160 },
+  { label: "Tenant", skeleton: "w-16", width: 104 },
+  { label: "To", skeleton: "w-24", width: 120 },
+  { label: "From", skeleton: "w-12", width: 82 },
+  { label: "Text", skeleton: "w-40" },
+  { label: "Status", stuck: true, skeleton: "w-20", width: 122 },
+  { label: "Enc.", full: "Encoding", skeleton: "w-10", width: 60 },
+  { label: "Seg.", full: "Segments", numeric: true, skeleton: "w-3", width: 48 },
+  { label: "Cost", numeric: true, skeleton: "w-12", width: 72 },
+  { label: "Att.", full: "Submit attempts", numeric: true, skeleton: "w-3", width: 48 },
+  { label: "Final in s", numeric: true, skeleton: "w-8", width: 78 },
 ];
 
-const SKELETON_ROWS = 12;
+const SKELETON_ROWS = 14;
 
 function SkeletonRows() {
   return Array.from({ length: SKELETON_ROWS }, (_, row) => (
-    <tr key={row} className="border-b border-line last:border-b-0">
-      {COLUMNS.map(({ label, skeleton, align, wideOnly }) => (
-        <Td key={label} className={wideOnly ? WIDE_ONLY : undefined}>
-          <Skeleton className={cn("h-4", skeleton, align === "right" && "ml-auto")} />
+    <tr key={row}>
+      {COLUMNS.map(({ label, numeric, skeleton }) => (
+        <Td key={label}>
+          <Skeleton className={`h-2.5 ${skeleton} ${numeric ? "ml-auto" : ""}`} />
         </Td>
       ))}
     </tr>
   ));
 }
 
+/**
+ * The rows that arrived since the list was last shown, so they can fade in.
+ * A new list (other filters) starts with none.
+ */
+function useArrivals(messages: Message[], listKey: string): ReadonlySet<string> {
+  const newestAt = messages[0]?.created_at ?? null;
+  const [seen, setSeen] = useState({
+    listKey,
+    newestAt,
+    arrived: new Set<string>() as ReadonlySet<string>,
+  });
+  if (seen.listKey !== listKey || seen.newestAt !== newestAt) {
+    const arrived =
+      seen.listKey === listKey ? arrivedSince(messages, seen.newestAt) : new Set<string>();
+    setSeen({ listKey, newestAt, arrived });
+  }
+  return seen.arrived;
+}
+
 interface MessagesTableProps {
   messages: Message[];
+  /** Identifies the filtered list, so switching filters is not mistaken for arrivals. */
+  listKey: string;
   loading: boolean;
-  /** Shown under the header in place of the rows: the empty or the error state. */
+  /** Shown in the body in place of the rows: the empty or the error state. */
   placeholder?: ReactNode;
 }
 
 /**
- * The message table. From 768 px up it has its own height and the header
- * stays in view while the body scrolls. Below that it is as tall as its rows
- * and the page scrolls, so a phone never has a scroll area inside another.
+ * The message table: one group row per UTC day, then one row per message.
+ * The head sticks to the top of the page while it scrolls. Under 768 px the
+ * table scrolls sideways inside its wrapper.
  */
-export function MessagesTable({ messages, loading, placeholder }: MessagesTableProps) {
+export function MessagesTable({ messages, listKey, loading, placeholder }: MessagesTableProps) {
   const router = useRouter();
-  const now = useNow(10_000);
+  const arrived = useArrivals(messages, listKey);
+  const sharedId = sharedIdPrefix(messages.map((message) => message.id));
 
   const open = useCallback(
     (id: string, inNewTab: boolean) => {
@@ -71,35 +103,64 @@ export function MessagesTable({ messages, loading, placeholder }: MessagesTableP
   );
 
   return (
-    <>
-      <Table
-        containerClassName={placeholder ? undefined : "min-h-80 md:max-h-[calc(100dvh-19rem)]"}
-        aria-busy={loading}
-      >
-        <caption className="sr-only">Messages, newest first</caption>
-        <thead>
-          <tr>
-            {COLUMNS.map(({ label, align, wideOnly }) => (
-              <Th key={label} align={align} className={wideOnly ? WIDE_ONLY : undefined}>
-                {label}
-              </Th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <SkeletonRows />
-          ) : (
-            messages.map((message) => (
-              <MessageRow key={message.id} message={message} now={now} onOpen={open} />
-            ))
-          )}
-        </tbody>
-      </Table>
-      {/* Outside the table, so it is centred in the card and not in a table that may be wider. */}
-      {placeholder ? (
-        <div className="flex min-h-80 items-center justify-center">{placeholder}</div>
-      ) : null}
-    </>
+    <Table scrollX className={styles.table} aria-busy={loading}>
+      <caption className="sr-only">Messages, newest first. Times are UTC.</caption>
+      <colgroup>
+        {COLUMNS.map(({ label, width }) => (
+          <col key={label} style={width ? { width } : undefined} />
+        ))}
+      </colgroup>
+      <thead>
+        <tr>
+          {COLUMNS.map(({ label, full, numeric, pin, stuck }) => (
+            <Th
+              key={label}
+              numeric={numeric}
+              pin={pin}
+              className={stuck ? styles.stuck : undefined}
+            >
+              {full ? (
+                <abbr title={full} className="no-underline">
+                  {label}
+                </abbr>
+              ) : (
+                label
+              )}
+            </Th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {loading ? (
+          <SkeletonRows />
+        ) : placeholder ? (
+          <NoteRow colSpan={COLUMNS.length}>{placeholder}</NoteRow>
+        ) : (
+          groupByUtcDay(messages).map((group) => (
+            <Fragment key={group.day}>
+              <Tr variant="group">
+                <td colSpan={COLUMNS.length}>
+                  {group.label}
+                  <span className="font-normal text-ink-2">
+                    {" "}
+                    · {formatCount(group.messages.length)}{" "}
+                    {group.messages.length === 1 ? "message" : "messages"} in view
+                  </span>
+                </td>
+              </Tr>
+              {group.messages.map((message) => (
+                <MessageRow
+                  key={message.id}
+                  message={message}
+                  arriving={arrived.has(message.id)}
+                  sharedId={sharedId}
+                  onOpen={open}
+                />
+              ))}
+            </Fragment>
+          ))
+        )}
+      </tbody>
+    </Table>
   );
 }

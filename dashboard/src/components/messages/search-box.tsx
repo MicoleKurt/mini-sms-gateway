@@ -1,24 +1,35 @@
 "use client";
 
-import { Search, X } from "lucide-react";
-import { useEffect, useEffectEvent, useState } from "react";
-import { Input } from "@/components/ui/field";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui/button";
 
 const DEBOUNCE_MS = 300;
+const INPUT_ID = "message-search";
+
+function isEditable(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+  );
+}
 
 interface SearchBoxProps {
   /** The committed search, from the URL. */
   value: string;
   onCommit: (value: string) => void;
+  className?: string;
 }
 
 /**
- * The search field. Typing is local and instant. The value is committed (to
- * the URL, and so to the query) 300 ms after the last keystroke.
+ * The search field. Typing is local and instant; the value is committed (to
+ * the URL, and so to the query) 300 ms after the last keystroke. "/" anywhere
+ * on the page outside another field puts the cursor here.
  */
-export function SearchBox({ value, onCommit }: SearchBoxProps) {
+export function SearchBox({ value, onCommit, className }: SearchBoxProps) {
   const [draft, setDraft] = useState(value);
   const [seenValue, setSeenValue] = useState(value);
+  const input = useRef<HTMLInputElement>(null);
   // Read at commit time, so a parent that re-renders often does not restart the timer.
   const commit = useEffectEvent(onCommit);
 
@@ -35,35 +46,48 @@ export function SearchBox({ value, onCommit }: SearchBoxProps) {
     return () => clearTimeout(timer);
   }, [draft, value]);
 
+  useEffect(() => {
+    function focusOnSlash(event: KeyboardEvent) {
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (event.defaultPrevented || isEditable(event.target)) return;
+      event.preventDefault();
+      input.current?.focus();
+      input.current?.select();
+    }
+    document.addEventListener("keydown", focusOnSlash);
+    return () => document.removeEventListener("keydown", focusOnSlash);
+  }, []);
+
   return (
-    <div className="relative w-full sm:w-72">
-      <label htmlFor="message-search" className="sr-only">
-        Search by message ID, destination number or client reference
+    <div className={cn("field", className)}>
+      <label htmlFor={INPUT_ID} className="lbl">
+        Search
       </label>
-      <Search
-        aria-hidden
-        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-faint"
-      />
-      <Input
-        id="message-search"
-        type="search"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        placeholder="Message ID, number or client_ref"
-        autoComplete="off"
-        spellCheck={false}
-        className="px-8 font-mono text-xs [&::-webkit-search-cancel-button]:hidden"
-      />
-      {draft !== "" ? (
-        <button
-          type="button"
-          onClick={() => setDraft("")}
-          aria-label="Clear search"
-          className="absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 items-center justify-center rounded text-ink-faint hover:text-ink"
-        >
-          <X aria-hidden className="size-3.5" />
-        </button>
-      ) : null}
+      <div className="relative">
+        <input
+          ref={input}
+          id={INPUT_ID}
+          type="search"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="ID, number or client ref"
+          aria-keyshortcuts="/"
+          autoComplete="off"
+          spellCheck={false}
+          className={cn("input pr-12 [&::-webkit-search-cancel-button]:hidden", draft && "mono")}
+        />
+        <span className="absolute top-0 right-0 flex h-8 items-center">
+          {draft !== "" ? (
+            <Button variant="quiet" className="text-small" onClick={() => setDraft("")}>
+              Clear<span className="sr-only"> search</span>
+            </Button>
+          ) : (
+            <kbd aria-hidden className="mono text-label text-ink-3">
+              /
+            </kbd>
+          )}
+        </span>
+      </div>
     </div>
   );
 }

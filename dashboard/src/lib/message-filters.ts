@@ -32,6 +32,20 @@ export const NO_FILTERS: MessageFilters = {
   q: null,
 };
 
+/** The filters as the URL holds them: `range` may be missing. */
+export type UrlFilters = Omit<MessageFilters, "range"> & { range: RangeId | null };
+
+/**
+ * The filters the list applies, from what the URL holds, so the fields on
+ * screen always show the filter in force. From and To only count in the
+ * custom range: a link with bounds and no range means that range, and
+ * bounds left over beside a preset or "All" are dropped.
+ */
+export function normalizeFilters(url: UrlFilters): MessageFilters {
+  const range = url.range ?? (url.from !== null || url.to !== null ? "custom" : "all");
+  return range === "custom" ? { ...url, range } : { ...url, range, from: null, to: null };
+}
+
 export function hasActiveFilters(filters: MessageFilters): boolean {
   return (
     filters.tenant !== null ||

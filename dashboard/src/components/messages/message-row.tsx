@@ -1,59 +1,71 @@
 "use client";
 
-import { TriangleExclamationPoint } from "lucide-react";
-import Link from "next/link";
-import { memo, useEffect, useRef, type MouseEvent } from "react";
+import { memo, type MouseEvent } from "react";
 import type { Message } from "@/lib/api/schemas";
-import { cn } from "@/lib/cn";
-import { formatAge, formatDateTime, formatMoney, formatRowTime } from "@/lib/format";
-import { StatusBadge } from "@/components/ui/badge";
-import { Td } from "@/components/ui/table";
+import { Money } from "@/components/ui/figures";
+import { LiveValue } from "@/components/ui/live-value";
+import { MessageId } from "@/components/ui/message-id";
+import { StatusWord } from "@/components/ui/status";
+import { Td, Tr } from "@/components/ui/table";
+import { TimeOfDay } from "@/components/ui/time-of-day";
 import { Tooltip } from "@/components/ui/tooltip";
+import { secondsToFinal, splitListId } from "./list-format";
+import styles from "./messages-table.module.css";
 
 const ENCODING_LABEL = { GSM7: "GSM-7", UCS2: "UCS-2" } as const;
 
-const AMBIGUOUS_HINT = "An attempt had no answer. The carrier may have accepted it more than once.";
+function ambiguousHint(count: number): string {
+  const which = count === 1 ? "One submit attempt" : `${count} submit attempts`;
+  return `${which} got no answer. The carrier may have taken the message more than once.`;
+}
 
-/** For the columns a phone has no room for. It keeps time, status, destination, cost and attempts. */
-export const WIDE_ONLY = "hidden md:table-cell";
+/** A small triangle in the attention ink: a submit nobody answered. */
+function AmbiguousMark() {
+  return (
+    <svg aria-hidden viewBox="0 0 10 10" className="inline-block size-[9px] overflow-visible">
+      <path d="M5 1 9.3 9H.7z" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+/** Attempts: 2 and more are bold; an unanswered attempt adds a mark with its explanation. */
+function Attempts({ attempts, ambiguous }: { attempts: number; ambiguous: number }) {
+  return (
+    <span className="inline-flex items-baseline justify-end gap-1.5">
+      {ambiguous > 0 ? (
+        <Tooltip content={ambiguousHint(ambiguous)} focusable className="attn">
+          <AmbiguousMark />
+          <span className="sr-only">{ambiguous} without an answer, </span>
+        </Tooltip>
+      ) : null}
+      <span
+        className={
+          attempts >= 2 ? "font-semibold text-ink" : attempts === 0 ? "zero" : "text-ink-2"
+        }
+      >
+        {attempts}
+      </span>
+    </span>
+  );
+}
 
 interface MessageRowProps {
   message: Message;
-  /** The current time, for the relative age. */
-  now: number;
-  /** Called for a click anywhere on the row. The link in the first cell works without it. */
+  /** It arrived after the list was first shown: it fades in. */
+  arriving: boolean;
+  /** How many leading characters every ID in view shares. */
+  sharedId: number;
+  /** Called for a click anywhere on the row. The ID link works without it. */
   onOpen: (id: string, inNewTab: boolean) => void;
 }
 
-/** Flash the row when its status changes after it was first shown. */
-function useFlashOnChange(status: string) {
-  const row = useRef<HTMLTableRowElement>(null);
-  const shownStatus = useRef(status);
-
-  useEffect(() => {
-    if (shownStatus.current === status) return;
-    shownStatus.current = status;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    row.current?.animate(
-      [{ backgroundColor: "var(--flash)" }, { backgroundColor: "transparent" }],
-      {
-        duration: 1_200,
-        easing: "ease-out",
-      },
-    );
-  }, [status]);
-
-  return row;
-}
-
-function MessageRowComponent({ message, now, onOpen }: MessageRowProps) {
-  const row = useFlashOnChange(message.status);
-  const age = formatAge(message.created_at, now);
+function MessageRowComponent({ message, arriving, sharedId, onOpen }: MessageRowProps) {
+  const final = secondsToFinal(message);
 
   // The whole row opens the message for a mouse. Keyboard and assistive
-  // technology use the link in the first cell, which is the real control.
+  // technology use the ID link, which is the real control.
   function handleClick(event: MouseEvent) {
-    // The link and the hint icon handle their own clicks.
+    // The link and the attempts hint handle their own clicks.
     if ((event.target as Element).closest("a, button, [tabindex]")) return;
     // A click that ends a text selection is a copy, not a navigation.
     if (window.getSelection()?.toString()) return;
@@ -61,55 +73,55 @@ function MessageRowComponent({ message, now, onOpen }: MessageRowProps) {
   }
 
   return (
-    <tr
-      ref={row}
-      onClick={handleClick}
-      className="cursor-pointer border-b border-line last:border-b-0 hover:bg-raised has-[a:focus-visible]:bg-raised"
-    >
-      <Td>
-        <Tooltip content={<span className="font-mono">{formatDateTime(message.created_at)}</span>}>
-          <Link href={`/messages/${message.id}`} className="rounded hover:underline">
-            <time dateTime={message.created_at} className="font-mono">
-              {formatRowTime(message.created_at, now)}
-            </time>
-            {/* The space is for the link's name, which would otherwise read "23:04:0542s ago". */}
-            {age ? (
-              <span className="ml-1 hidden text-xs text-ink-faint sm:inline"> {age}</span>
-            ) : null}
-          </Link>
-        </Tooltip>
+    <Tr hoverable arriving={arriving} onClick={handleClick} className="cursor-pointer">
+      <Td mono pin>
+        <TimeOfDay at={message.created_at} />
       </Td>
-      <Td>
-        <StatusBadge status={message.status} />
+      <Td mono>
+        <MessageId
+          id={message.id}
+          href={`/messages/${message.id}`}
+          shared={sharedId}
+          shownLength={splitListId(message.id).shown.length}
+        />
       </Td>
-      <Td className={cn(WIDE_ONLY, "max-w-40 truncate")}>{message.tenant_name}</Td>
-      <Td className="font-mono">{message.to}</Td>
-      <Td className={cn(WIDE_ONLY, "font-mono text-ink-muted")}>{message.from}</Td>
-      <Td className={cn(WIDE_ONLY, "text-ink-muted")}>{ENCODING_LABEL[message.encoding]}</Td>
-      <Td align="right" className={cn(WIDE_ONLY, "font-mono")}>
-        {message.segments}
+      <Td clip title={message.tenant_name}>
+        {message.tenant_name}
       </Td>
-      <Td align="right" className="font-mono">
-        {formatMoney(message.cost_micros, message.currency)}
+      <Td mono>{message.to}</Td>
+      <Td mono className="text-ink-2">
+        {message.from}
       </Td>
-      <Td align="right">
-        <span className="inline-flex items-center justify-end gap-1.5">
-          {message.ambiguous_attempts > 0 ? (
-            <Tooltip content={AMBIGUOUS_HINT} focusable className="flex rounded text-warn">
-              <TriangleExclamationPoint aria-label="Ambiguous attempt" className="size-3.5" />
-            </Tooltip>
-          ) : null}
-          <span
-            className={cn(
-              "font-mono",
-              message.attempts > 1 ? "font-semibold text-warn-ink" : "text-ink-muted",
-            )}
-          >
-            {message.attempts}
-          </span>
-        </span>
+      <Td clip title={message.text} className="text-ink-2">
+        {message.text}
       </Td>
-    </tr>
+      <Td className={styles.stuck}>
+        <LiveValue value={message.status}>
+          <StatusWord status={message.status} />
+        </LiveValue>
+      </Td>
+      <Td mono className={message.encoding === "GSM7" ? "text-ink-2" : undefined}>
+        {ENCODING_LABEL[message.encoding]}
+      </Td>
+      <Td numeric>{message.segments}</Td>
+      <Td numeric>
+        <Money micros={message.cost_micros} />
+        {message.currency === "USD" ? null : (
+          <span className="text-ink-3"> {message.currency}</span>
+        )}
+      </Td>
+      <Td numeric>
+        <Attempts attempts={message.attempts} ambiguous={message.ambiguous_attempts} />
+      </Td>
+      <Td numeric className={final === null ? "zero" : "text-ink-2"}>
+        {final ?? (
+          <>
+            <span aria-hidden>–</span>
+            <span className="sr-only">not final yet</span>
+          </>
+        )}
+      </Td>
+    </Tr>
   );
 }
 

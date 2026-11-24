@@ -1,14 +1,24 @@
 "use client";
 
-import { format } from "date-fns";
-import { X } from "lucide-react";
+import { useId, useState } from "react";
 import type { Tenant } from "@/lib/api/schemas";
 import { cn } from "@/lib/cn";
 import { RANGE_PRESETS, type MessageFilters, type RangeId } from "@/lib/message-filters";
 import { MESSAGE_STATUSES, STATUS_LABEL, type MessageStatus } from "@/lib/status";
+import { useNow } from "@/lib/use-now";
 import { Button } from "@/components/ui/button";
-import { Input, Select } from "@/components/ui/field";
+import { Select } from "@/components/ui/field";
+import { PresetGroup, type Preset } from "@/components/ui/preset-group";
 import { SearchBox } from "./search-box";
+import { UtcBoundInput } from "./utc-bound-input";
+import { formatUtcInput } from "./utc-input";
+
+type PresetId = Exclude<RangeId, "custom">;
+
+const RANGE_OPTIONS: readonly Preset<PresetId>[] = [
+  { value: "all", label: "All" },
+  ...RANGE_PRESETS.map(({ id, label }) => ({ value: id, label })),
+];
 
 interface FilterBarProps {
   filters: MessageFilters;
@@ -19,133 +29,146 @@ interface FilterBarProps {
   onClear: () => void;
 }
 
-const RANGE_OPTIONS: { id: RangeId; label: string }[] = [
-  { id: "all", label: "All" },
-  ...RANGE_PRESETS,
-];
+/** The created-time filter: range presets, then From and To in UTC. */
+function CreatedRange({ filters, onChange }: Pick<FilterBarProps, "filters" | "onChange">) {
+  const now = useNow(30_000);
 
-// On a phone the two labels get one width, so the inputs line up under each other.
-const BOUND_LABEL = "w-36 shrink-0 text-xs text-ink-muted sm:w-auto";
-
-/** The value format of <input type="datetime-local">, in local time. */
-function toLocalInputValue(date: Date | null): string {
-  return date ? format(date, "yyyy-MM-dd'T'HH:mm") : "";
-}
-
-function fromLocalInputValue(value: string): Date | null {
-  const date = new Date(value);
-  return value === "" || Number.isNaN(date.getTime()) ? null : date;
-}
-
-export function FilterBar({ filters, hasFilters, tenants, onChange, onClear }: FilterBarProps) {
-  // Typing a custom bound switches to the custom range. Emptying both goes back to "All".
-  function changeBound(bound: "from" | "to", value: string) {
-    const next = { from: filters.from, to: filters.to, [bound]: fromLocalInputValue(value) };
+  // Typing a bound switches to the custom range. Emptying both goes back to "All".
+  function changeBound(bound: "from" | "to", value: Date | null) {
+    const next = { from: filters.from, to: filters.to, [bound]: value };
     onChange({ ...next, range: next.from || next.to ? "custom" : "all" });
   }
 
-  // A tenant from a shared link stays selectable even before the tenants have loaded.
-  const tenantIsListed = tenants?.some((tenant) => tenant.id === filters.tenant) ?? false;
+  // An empty bound shows what it means under the current preset.
+  const preset = RANGE_PRESETS.find(({ id }) => id === filters.range);
+  const fromPlaceholder = preset ? formatUtcInput(new Date(now - preset.milliseconds)) : "earliest";
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <SearchBox value={filters.q ?? ""} onCommit={(q) => onChange({ q: q === "" ? null : q })} />
+    <div role="group" aria-labelledby="filter-created" className="field max-w-full flex-none">
+      <span id="filter-created" className="lbl">
+        Created (UTC)
+      </span>
+      <div className="flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2">
+        <PresetGroup
+          label="Created within"
+          options={RANGE_OPTIONS}
+          value={filters.range === "custom" ? null : filters.range}
+          onChange={(range) => onChange({ range, from: null, to: null })}
+        />
+        <span className="flex items-center gap-2">
+          <UtcBoundInput
+            id="filter-from"
+            label="Created from, UTC"
+            value={filters.from}
+            placeholder={fromPlaceholder}
+            onCommit={(value) => changeBound("from", value)}
+          />
+          <span aria-hidden className="text-ink-3">
+            –
+          </span>
+          <UtcBoundInput
+            id="filter-to"
+            label="Created to, UTC"
+            value={filters.to}
+            placeholder="now"
+            onCommit={(value) => changeBound("to", value)}
+          />
+        </span>
+      </div>
+    </div>
+  );
+}
 
-      <label htmlFor="filter-tenant" className="sr-only">
-        Tenant
-      </label>
-      <Select
-        id="filter-tenant"
-        className="min-w-32 flex-1 sm:w-40 sm:flex-none"
-        value={filters.tenant ?? ""}
-        onChange={(event) => onChange({ tenant: event.target.value || null })}
-      >
-        <option value="">All tenants</option>
-        {filters.tenant !== null && !tenantIsListed ? (
-          <option value={filters.tenant}>{filters.tenant}</option>
-        ) : null}
-        {tenants?.map((tenant) => (
-          <option key={tenant.id} value={tenant.id}>
-            {tenant.name}
-          </option>
-        ))}
-      </Select>
+/** How many filters besides the search are set, for the "Filters (2)" button on a phone. */
+function moreFiltersSet(filters: MessageFilters): number {
+  return [filters.tenant !== null, filters.status !== null, filters.range !== "all"].filter(Boolean)
+    .length;
+}
 
-      <label htmlFor="filter-status" className="sr-only">
-        Status
-      </label>
-      <Select
-        id="filter-status"
-        className="min-w-32 flex-1 sm:w-36 sm:flex-none"
-        value={filters.status ?? ""}
-        onChange={(event) =>
-          onChange({ status: (event.target.value || null) as MessageStatus | null })
-        }
-      >
-        <option value="">All statuses</option>
-        {MESSAGE_STATUSES.map((status) => (
-          <option key={status} value={status}>
-            {STATUS_LABEL[status]}
-          </option>
-        ))}
-      </Select>
+export function FilterBar({ filters, hasFilters, tenants, onChange, onClear }: FilterBarProps) {
+  const moreId = useId();
+  // On a phone the filters other than search fold away, so the rows start higher.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const tenantIsListed = tenants?.some((tenant) => tenant.id === filters.tenant) ?? false;
+  const set = moreFiltersSet(filters);
 
-      <div
-        role="group"
-        aria-label="Created within"
-        className="flex h-8 items-center rounded-md border border-control-border bg-surface p-0.5"
+  return (
+    <div
+      role="search"
+      aria-label="Filter messages"
+      className="flex flex-wrap items-end gap-x-6 gap-y-5"
+    >
+      <SearchBox
+        className="min-w-48 flex-[1.6_1_13rem]"
+        value={filters.q ?? ""}
+        onCommit={(q) => onChange({ q: q === "" ? null : q })}
+      />
+
+      <button
+        type="button"
+        aria-expanded={moreOpen}
+        aria-controls={moreId}
+        onClick={() => setMoreOpen(!moreOpen)}
+        className="btn btn-secondary btn-sm show-narrow"
       >
-        {RANGE_OPTIONS.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={filters.range === id}
-            onClick={() => onChange({ range: id, from: null, to: null })}
-            className={cn(
-              "h-full rounded px-2 text-xs font-medium whitespace-nowrap transition-colors",
-              filters.range === id
-                ? "bg-primary text-on-primary"
-                : "text-ink-muted hover:bg-raised hover:text-ink",
-            )}
+        Filters{set > 0 ? <span className="num"> ({set})</span> : null}
+      </button>
+
+      <div id={moreId} className={cn("filter-more", moreOpen && "is-open")}>
+        <div className="field min-w-32 flex-[1_1_8rem]">
+          <label htmlFor="filter-tenant" className="lbl">
+            Tenant
+          </label>
+          <Select
+            id="filter-tenant"
+            value={filters.tenant ?? ""}
+            onChange={(event) => onChange({ tenant: event.target.value || null })}
           >
-            {label}
-          </button>
-        ))}
-      </div>
+            <option value="">All tenants</option>
+            {/* A tenant from a link: its ID until the list has loaded, then whether it exists. */}
+            {filters.tenant !== null && !tenantIsListed ? (
+              <option value={filters.tenant}>{tenants ? "No such tenant" : filters.tenant}</option>
+            ) : null}
+            {tenants?.map((tenant) => (
+              <option key={tenant.id} value={tenant.id}>
+                {tenant.name}
+              </option>
+            ))}
+          </Select>
+        </div>
 
-      <div className="flex w-full items-center gap-2 sm:w-auto">
-        <label htmlFor="filter-from" className={BOUND_LABEL}>
-          Created from (local time)
-        </label>
-        <Input
-          id="filter-from"
-          type="datetime-local"
-          className="min-w-0 flex-1 font-mono text-xs sm:w-48 sm:flex-none"
-          value={toLocalInputValue(filters.from)}
-          max={toLocalInputValue(filters.to) || undefined}
-          onChange={(event) => changeBound("from", event.target.value)}
-        />
-      </div>
-      <div className="flex w-full items-center gap-2 sm:w-auto">
-        <label htmlFor="filter-to" className={BOUND_LABEL}>
-          Created to
-        </label>
-        <Input
-          id="filter-to"
-          type="datetime-local"
-          className="min-w-0 flex-1 font-mono text-xs sm:w-48 sm:flex-none"
-          value={toLocalInputValue(filters.to)}
-          min={toLocalInputValue(filters.from) || undefined}
-          onChange={(event) => changeBound("to", event.target.value)}
-        />
-      </div>
+        <div className="field min-w-32 flex-[1_1_8rem]">
+          <label htmlFor="filter-status" className="lbl">
+            Status
+          </label>
+          <Select
+            id="filter-status"
+            value={filters.status ?? ""}
+            onChange={(event) =>
+              onChange({ status: (event.target.value || null) as MessageStatus | null })
+            }
+          >
+            <option value="">Any status</option>
+            {MESSAGE_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {STATUS_LABEL[status]}
+              </option>
+            ))}
+          </Select>
+        </div>
 
-      {hasFilters ? (
-        <Button variant="ghost" size="md" onClick={onClear}>
-          <X aria-hidden />
-          Clear filters
+        <CreatedRange filters={filters} onChange={onChange} />
+
+        {/* Keeps its place when hidden, so the fields do not move as filters come and go.
+          On a phone it would take a line of its own, so there it goes. */}
+        <Button
+          variant="quiet"
+          onClick={onClear}
+          className={hasFilters ? "mb-0.5" : "invisible mb-0.5 max-md:hidden"}
+        >
+          Clear all<span className="sr-only"> filters</span>
         </Button>
-      ) : null}
+      </div>
     </div>
   );
 }

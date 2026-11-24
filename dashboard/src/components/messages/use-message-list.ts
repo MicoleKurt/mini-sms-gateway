@@ -17,7 +17,7 @@ import {
   type PendingNew,
 } from "./live-list";
 
-const PAGE_SIZE = 50;
+export const PAGE_SIZE = 50;
 
 // Under load the stream sends hundreds of events a second. Applying them a
 // few times a second keeps the table responsive and is still live to the eye.
