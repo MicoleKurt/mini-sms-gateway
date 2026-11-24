@@ -154,12 +154,12 @@ services:
   loadtest:
     <<: *gateway
     profiles: ["tools"]
-    command: ["python", "/loadtest/load_test.py"]
+    command: ["python", "/app/loadtest/load_test.py"]
     environment:
       GATEWAY_URL: http://gateway:8000
       CARRIER_URL: http://mock-carrier:9000
     volumes:
-      - ./loadtest:/loadtest:ro
+      - ./loadtest:/app/loadtest:ro
     depends_on:
       gateway:
         condition: service_healthy

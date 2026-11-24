@@ -14,6 +14,7 @@ from conftest import (
     FakeCarrier,
     assert_books_balance,
     balance_of,
+    drain,
     ledger_of,
     message_row,
     post_dlr,
@@ -118,8 +119,7 @@ async def test_no_refund_when_the_carrier_accepted_but_delivery_failed(
     undelivered = await send(client, acme)
     expired = await send(client, acme)
     carrier.then("c-undeliv", "c-expired")
-    dispatcher = make_dispatcher()
-    await dispatcher.run_once()
+    await drain(make_dispatcher())
 
     await post_dlr(client, "c-undeliv", "UNDELIV")
     await post_dlr(client, "c-expired", "EXPIRED")
@@ -137,7 +137,7 @@ async def test_balance_endpoint_reports_the_invariant(
     await send(client, acme)
     await send(client, acme)
     carrier.then(400)  # one of the two is refunded
-    await make_dispatcher().run_once()
+    await drain(make_dispatcher())
 
     balance = (await client.get("/v1/balance", headers=acme)).json()
 

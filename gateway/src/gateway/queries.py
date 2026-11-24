@@ -232,15 +232,15 @@ async def queue_stats(pool: asyncpg.Pool) -> dict[str, int]:
         SELECT
             (SELECT count(*) FROM messages WHERE status = 'QUEUED') AS depth,
             (SELECT count(*) FROM submit_attempts WHERE outcome IS NULL) AS in_flight,
-            -- The longest any ready message has been waiting. One index probe
-            -- per tenant instead of a scan of the whole queue.
-            (SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(oldest.at)) * 1000, 0)
+            -- Age of the oldest message that is ready to send. One index
+            -- probe per tenant instead of a scan of the whole queue.
+            (SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(oldest.created_at)) * 1000, 0)
              FROM dispatch_cursor c
              CROSS JOIN LATERAL (
-                 SELECT m.next_attempt_at AS at
+                 SELECT m.created_at
                  FROM messages m
                  WHERE m.tenant_id = c.tenant_id AND m.status = 'QUEUED' AND m.next_attempt_at <= now()
-                 ORDER BY m.next_attempt_at
+                 ORDER BY m.id
                  LIMIT 1) oldest) AS oldest_age_ms
         """
     )

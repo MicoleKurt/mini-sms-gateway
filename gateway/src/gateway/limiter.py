@@ -45,21 +45,14 @@ redis.call('SET', KEYS[1], string.format('%.0f', tat), 'PX', 60000)
 return { granted, 0 }
 """
 
-# ARGV[1] = microseconds to move the TAT by (negative gives tokens back)
-# ARGV[2] = 1 to measure from now (a penalty), 0 to shift the stored TAT (a release)
-_SHIFT = """
-local delta = tonumber(ARGV[1])
+# ARGV[1] = microseconds from now before the next token may be granted
+_PENALIZE = """
 local t = redis.call('TIME')
-local now = tonumber(t[1]) * 1000000 + tonumber(t[2])
-local tat = tonumber(redis.call('GET', KEYS[1]) or now)
-if tat < now then tat = now end
-if ARGV[2] == '1' then
-  if now + delta > tat then tat = now + delta end
-else
-  tat = tat + delta
-  if tat < now then tat = now end
+local resume_at = tonumber(t[1]) * 1000000 + tonumber(t[2]) + tonumber(ARGV[1])
+local tat = tonumber(redis.call('GET', KEYS[1]) or 0)
+if resume_at > tat then
+  redis.call('SET', KEYS[1], string.format('%.0f', resume_at), 'PX', 60000)
 end
-redis.call('SET', KEYS[1], string.format('%.0f', tat), 'PX', 60000)
 return 1
 """
 
@@ -74,11 +67,7 @@ class RateLimiter:
         self._burst = burst
         self._key = key
         self._acquire = redis.register_script(_ACQUIRE)
-        self._shift = redis.register_script(_SHIFT)
-
-    @property
-    def burst(self) -> int:
-        return self._burst
+        self._penalize = redis.register_script(_PENALIZE)
 
     async def acquire(self, wanted: int = 1) -> tuple[int, float]:
         """Take up to `wanted` tokens. Return (granted, seconds to wait if granted == 0)."""
@@ -87,12 +76,7 @@ class RateLimiter:
         )
         return int(granted), int(wait_us) / 1_000_000
 
-    async def release(self, tokens: int) -> None:
-        """Give back tokens that were taken but not used (no message was ready)."""
-        if tokens > 0:
-            await self._shift(keys=[self._key], args=[-tokens * self._interval_us, 0])
-
     async def penalize(self, seconds: float) -> None:
         """Stop every worker for `seconds`. Used when the carrier answers 429:
         its view of the window is the one that counts, not ours."""
-        await self._shift(keys=[self._key], args=[round(seconds * 1_000_000), 1])
+        await self._penalize(keys=[self._key], args=[round(seconds * 1_000_000)])

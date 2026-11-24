@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     carrier_rate_limit: int = 50
     #: We aim below the limit. Our clock and the carrier's window are not the
     #: same thing, so a target of exactly 50 would produce 429s.
-    carrier_rate_headroom: float = 0.94
+    carrier_rate_headroom: float = 0.92
     #: Submits that may go out back to back. Worst case in any one second is
     #: target rate + burst, which must stay <= carrier_rate_limit.
     carrier_burst: int = 2

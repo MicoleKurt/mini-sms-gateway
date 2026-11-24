@@ -112,7 +112,7 @@ jobs:
         shell: bash  # pipefail, so a failed load test fails the step despite the tee
         run: |
           docker compose run --rm -T loadtest \
-            python /loadtest/load_test.py --messages "${{ inputs.load_messages || '10000' }}" \
+            python /app/loadtest/load_test.py --messages "${{ inputs.load_messages || '10000' }}" \
             | tee load-test-output.txt
 
       - name: Carrier and webhook statistics

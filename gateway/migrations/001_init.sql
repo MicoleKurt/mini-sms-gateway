@@ -94,9 +94,14 @@ CREATE TABLE messages (
         CHECK (cost_micros = segments * unit_price_micros)
 );
 
--- The dispatch queue: only QUEUED rows, per tenant, oldest visibility first.
+-- The dispatch queue: only QUEUED rows, per tenant, oldest message first.
+-- The ID is a UUIDv7, so ordering by it is ordering by creation time.
+-- next_attempt_at is in the key so the "is it visible yet?" test is answered
+-- from the index, without a heap fetch for every leased or backing-off row.
+-- Oldest-first matters for retries: a message that got a 503 goes back to the
+-- FRONT of its tenant's queue after its backoff, not behind the whole backlog.
 CREATE INDEX messages_dispatch_idx
-    ON messages (tenant_id, next_attempt_at, id)
+    ON messages (tenant_id, id, next_attempt_at)
     WHERE status = 'QUEUED';
 
 -- Listing: newest first, keyset-paginated on (created_at, id).

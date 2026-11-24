@@ -9,6 +9,7 @@ from typing import Any
 
 import asyncpg
 import httpx
+import pytest
 
 from conftest import (
     ACME_ID,
@@ -320,19 +321,57 @@ async def test_limiter_never_exceeds_rate_plus_burst_in_any_second(redis_client:
     assert len(granted_at) >= rate  # and it is not uselessly slow
 
 
-async def test_limiter_release_and_penalty(redis_client: Any) -> None:
+async def test_limiter_says_how_long_to_wait_and_honours_a_penalty(redis_client: Any) -> None:
     limiter = RateLimiter(redis_client, rate_per_second=10, burst=1, key="test:tat2")
 
     assert (await limiter.acquire(1))[0] == 1
     granted, wait = await limiter.acquire(1)
     assert granted == 0 and 0 < wait <= 0.1
 
-    await limiter.release(1)  # the token was not used: give it back
-    assert (await limiter.acquire(1))[0] == 1
-
     await limiter.penalize(0.5)  # the carrier said 429
     granted, wait = await limiter.acquire(1)
     assert granted == 0 and 0.3 < wait <= 0.5
+
+
+async def test_two_dispatchers_together_stay_under_the_carrier_limit(
+    client: httpx.AsyncClient, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    """The real loop, two workers, a backlog: count submits as the carrier sees them."""
+    await client.post("/v1/messages/batch", json={"messages": [sms()] * 400}, headers=acme)
+    limit, burst = 100, 2
+    settings = make_settings(carrier_rate_limit=limit, carrier_rate_headroom=0.9, carrier_burst=burst)
+    stop = asyncio.Event()
+    workers = [asyncio.create_task(make_dispatcher(settings, worker_id=f"w-{i}").run(stop)) for i in range(2)]
+
+    await asyncio.sleep(1.6)
+    stop.set()
+    await asyncio.gather(*workers)
+
+    assert _max_in_any_window(sorted(carrier.arrivals), 1.0) <= limit
+    assert len(carrier.arrivals) >= 100  # it does use the capacity
+    assert len({r["message_id"] for r in carrier.requests}) == len(carrier.requests)  # nothing sent twice
+
+
+async def test_without_a_token_nothing_is_sent_and_no_attempt_is_left_behind(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    """Valkey is down. Sending without the limiter would risk the carrier limit, so we do not send."""
+    message_id = await send(client, acme)
+    dispatcher = make_dispatcher()
+
+    async def limiter_is_down(_wanted: int = 1) -> tuple[int, float]:
+        raise ConnectionError("valkey is not reachable")
+
+    dispatcher._limiter.acquire = limiter_is_down  # type: ignore[method-assign]
+
+    with pytest.raises(ConnectionError):
+        await dispatcher.run_once()
+
+    assert carrier.requests == []
+    row = await message_row(pool, message_id)
+    # The claim was undone: not an attempt, and above all not an ambiguous one.
+    assert (row["status"], row["attempts"], row["ambiguous_attempts"]) == ("QUEUED", 0, 0)
+    assert await _attempts(pool, message_id) == []
 
 
 async def test_a_429_slows_every_worker_down(

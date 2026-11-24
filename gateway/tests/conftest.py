@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections import deque
 from collections.abc import AsyncIterator, Callable
 from typing import Any
@@ -151,6 +152,8 @@ class FakeCarrier:
 
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
+        #: time.monotonic() of each submit, as the carrier would count them.
+        self.arrivals: list[float] = []
         self._script: deque[int | str] = deque()
         self._accepted = 0
 
@@ -159,6 +162,7 @@ class FakeCarrier:
         return self
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.arrivals.append(time.monotonic())
         self.requests.append(json.loads(request.content))
         step = self._script.popleft() if self._script else 200
         if step == "timeout":
@@ -219,6 +223,17 @@ async def send(http: httpx.AsyncClient, headers: dict[str, str], **kwargs: Any) 
     response = await http.post("/v1/messages", json=sms(**kwargs), headers=headers)
     assert response.status_code == 202, response.text
     return response.json()["id"]
+
+
+async def drain(dispatcher: Dispatcher, limit: int = 100) -> int:
+    """Process messages one by one until none is ready. Return how many submits ran."""
+    total = 0
+    for _ in range(limit):
+        done = await dispatcher.run_once()
+        if not done:
+            break
+        total += done
+    return total
 
 
 async def post_dlr(
@@ -286,6 +301,7 @@ __all__ = [
     "FakeCarrier",
     "assert_books_balance",
     "balance_of",
+    "drain",
     "event_statuses",
     "ledger_of",
     "make_settings",

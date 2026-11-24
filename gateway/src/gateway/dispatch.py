@@ -4,16 +4,26 @@ record what happened.
 The queue is the `messages` table (status QUEUED, visible when
 `next_attempt_at <= now()`). The order of operations is what makes it safe:
 
-  1. take a rate-limit token                       (Redis, shared by all workers)
-  2. claim ONE message and write the attempt row   (one SQL statement, committed)
-  3. call the carrier
+  1. claim ONE message and write the attempt row   (one SQL statement, committed)
+  2. take a rate-limit token                       (Valkey, shared by all workers)
+  3. call the carrier, at once
   4. record the result                             (one transaction)
 
-A worker can die between any two steps. After step 2 the message is
+A worker can die between any two steps. After step 1 the message is
 invisible only until its lease runs out, then another worker claims it and
 sees an attempt row with no outcome: evidence that the carrier may already
 have the message. Nothing is lost; the open question is duplicates, and
 DESIGN.md is explicit about where that risk remains.
+
+Why the token comes right before the HTTP call: the carrier counts submits
+when they ARRIVE. Anything that sits between "token granted" and "request
+sent" (a slow query, a busy event loop) delays some submits more than
+others and can squeeze more than 50 arrivals into one second even though
+the tokens were handed out correctly. So nothing sits between them.
+
+Why only one message is claimed ahead: fairness. A worker never holds more
+than one message that is waiting for a token, so a late OTP is at most a
+couple of slots behind, never behind a batch a worker took in advance.
 """
 
 from __future__ import annotations
@@ -61,8 +71,10 @@ class Claimed:
 # next_tenant: among tenants that have a message ready, the one served
 #   longest ago (round robin). SKIP LOCKED lets two workers pick two
 #   different tenants at the same moment instead of queueing on one row.
-# picked: that tenant's oldest ready message. SKIP LOCKED again, so workers
-#   never wait on each other's rows.
+# picked: that tenant's oldest ready message (the ID is a UUIDv7, so ORDER BY
+#   id is creation order). A retried message is older than the backlog behind
+#   it, so it goes out first once its backoff has passed. SKIP LOCKED again,
+#   so workers never wait on each other's rows.
 # closed: an earlier attempt for this message that never got an outcome
 #   means its worker died or stalled past the lease. Mark it ABANDONED and
 #   count it as ambiguous: the carrier may have received that submit.
@@ -89,7 +101,7 @@ picked AS (
     WHERE m.tenant_id = (SELECT tenant_id FROM next_tenant)
       AND m.status = 'QUEUED'
       AND m.next_attempt_at <= now()
-    ORDER BY m.next_attempt_at, m.id
+    ORDER BY m.id
     LIMIT 1
     FOR UPDATE OF m SKIP LOCKED
 ),
@@ -138,6 +150,31 @@ async def claim_one(pool: asyncpg.Pool, worker_id: str, lease_seconds: float) ->
         encoding=row["encoding"],
         attempt=row["attempts"],
     )
+
+
+async def release_claim(pool: asyncpg.Pool, msg: Claimed) -> None:
+    """Undo a claim whose submit was never sent: no attempt happened.
+
+    Fenced by the attempt number, so it cannot touch a message that another
+    worker has claimed since.
+    """
+    async with pool.acquire() as conn, conn.transaction():
+        released = await conn.fetchval(
+            """
+            UPDATE messages
+            SET attempts = attempts - 1, next_attempt_at = now(), locked_by = NULL
+            WHERE id = $1 AND status = 'QUEUED' AND attempts = $2
+            RETURNING true
+            """,
+            msg.id,
+            msg.attempt,
+        )
+        if released:
+            await conn.execute(
+                "DELETE FROM submit_attempts WHERE message_id = $1 AND attempt_no = $2 AND outcome IS NULL",
+                msg.id,
+                msg.attempt,
+            )
 
 
 async def _close_attempt(
@@ -288,31 +325,33 @@ class Dispatcher:
         await self._drain()
 
     async def _tick(self) -> float:
-        """Start as many submits as tokens allow. Return how long to pause."""
-        free = self._settings.worker_max_in_flight - len(self._tasks)
-        if free <= 0:
+        """Claim one message, wait for its token, start its submit. Return how long to pause."""
+        if len(self._tasks) >= self._settings.worker_max_in_flight:
             await asyncio.wait(self._tasks, return_when=asyncio.FIRST_COMPLETED)
             return 0.0
 
-        # Token first, claim second. A message is chosen only when it can be
-        # sent right now, so the fair pick is made at the last moment and a
-        # late OTP is never stuck behind messages a worker claimed in advance.
-        granted, wait = await self._limiter.acquire(min(free, self._limiter.burst))
-        if granted == 0:
-            return wait
+        msg = await claim_one(self._pool, self.worker_id, self._settings.lease_seconds)
+        if msg is None:
+            return self._settings.worker_idle_poll_seconds
 
-        started = 0
         try:
-            for _ in range(granted):
-                msg = await claim_one(self._pool, self.worker_id, self._settings.lease_seconds)
-                if msg is None:
-                    break
-                started += 1
-                self._spawn(msg)
-        finally:
-            if started < granted:
-                await self._limiter.release(granted - started)
-        return 0.0 if started else self._settings.worker_idle_poll_seconds
+            await self._wait_for_token()
+        except BaseException:
+            # No token (Valkey down, or we are shutting down): the message was
+            # never sent, so undo the claim instead of leaving an open attempt
+            # that would later be counted as "the carrier may have it".
+            await asyncio.shield(release_claim(self._pool, msg))
+            raise
+        self._spawn(msg)
+        return 0.0
+
+    async def _wait_for_token(self) -> None:
+        """Block until the shared limiter grants one submit. Without a token nothing is sent."""
+        while True:
+            granted, wait = await self._limiter.acquire(1)
+            if granted:
+                return
+            await asyncio.sleep(wait)
 
     def _spawn(self, msg: Claimed) -> None:
         task = asyncio.create_task(self._handle_safely(msg), name=f"submit-{msg.id}")
@@ -330,7 +369,7 @@ class Dispatcher:
             task.cancel()
 
     async def run_once(self) -> int:
-        """Claim and fully process whatever one tick allows. Used by the tests."""
+        """Claim and fully process one message, if one is ready. Used by the tests."""
         await self._tick()
         tasks = list(self._tasks)
         if tasks:
