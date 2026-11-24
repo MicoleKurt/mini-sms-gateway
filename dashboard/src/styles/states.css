@@ -1,0 +1,54 @@
+/* Loading, empty and error lines, and the inline notice. */
+
+@layer components {
+  /* One line of state inside a data region: title, reason, next step. */
+  .state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px var(--s-3);
+    padding: var(--s-3) 0;
+    color: var(--ink-2);
+  }
+
+  .state-title {
+    color: var(--ink);
+    font-weight: var(--w-medium);
+  }
+
+  .state-text {
+    max-width: 60em;
+  }
+
+  /* A notice opens with a rule in its tone's ink, like a section. */
+  .notice {
+    padding: var(--s-2) 0;
+    border-top: var(--rule-head) solid var(--rule-strong);
+    max-width: 640px;
+  }
+
+  .notice-title {
+    font-weight: var(--w-bold);
+  }
+
+  .notice-text {
+    margin-top: 2px;
+    color: var(--ink);
+  }
+
+  .notice-danger {
+    border-top-color: var(--attention-fill);
+  }
+
+  .notice-danger .notice-title {
+    color: var(--attention);
+  }
+
+  .notice-warn {
+    border-top-color: var(--st-queued);
+  }
+
+  .notice-warn .notice-title {
+    color: var(--st-queued-text);
+  }
+}

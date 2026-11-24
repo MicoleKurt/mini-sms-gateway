@@ -1,0 +1,72 @@
+/* Status: a geometric mark in the status fill, and a word in its text role.
+   Circles are the carrier's side, squares are ours. */
+
+[data-status="ACCEPTED"] {
+  --mark: var(--st-accepted);
+  --word: var(--st-accepted-text);
+}
+[data-status="QUEUED"] {
+  --mark: var(--st-queued);
+  --word: var(--st-queued-text);
+}
+[data-status="SUBMITTED"] {
+  --mark: var(--st-submitted);
+  --word: var(--st-submitted-text);
+}
+[data-status="DELIVERED"] {
+  --mark: var(--st-delivered);
+  --word: var(--st-delivered-text);
+}
+[data-status="UNDELIVERED"] {
+  --mark: var(--st-undelivered);
+  --word: var(--st-undelivered-text);
+}
+[data-status="EXPIRED"] {
+  --mark: var(--st-expired);
+  --word: var(--st-expired-text);
+}
+[data-status="FAILED"] {
+  --mark: var(--st-failed);
+  --word: var(--st-failed-text);
+}
+
+/* A status with a count of zero: present, but it takes no colour. */
+[data-muted] [data-status],
+[data-status][data-muted] {
+  --mark: var(--ink-3);
+  --word: var(--ink-3);
+}
+
+@layer components {
+  .st-mark {
+    display: inline-block;
+    flex: none;
+    width: 10px;
+    height: 10px;
+    overflow: visible;
+    color: var(--mark, var(--ink-2));
+  }
+
+  /* The word has a fixed minimum width so a status column aligns by itself. */
+  .st {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
+    min-width: 11ch;
+    color: var(--word, var(--ink));
+    white-space: nowrap;
+  }
+
+  /* Sits the mark on the baseline, at cap height. */
+  .st > .st-mark {
+    align-self: center;
+    transform: translateY(-0.5px);
+  }
+
+  /* The outcomes an operator scans 200 rows for are bold; delivered stays quiet. */
+  .st[data-status="UNDELIVERED"]:not([data-muted]),
+  .st[data-status="EXPIRED"]:not([data-muted]),
+  .st[data-status="FAILED"]:not([data-muted]) {
+    font-weight: var(--w-bold);
+  }
+}

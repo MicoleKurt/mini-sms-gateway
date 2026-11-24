@@ -1,23 +1,4 @@
-import { format, isSameDay } from "date-fns";
-
 const MICROS_PER_UNIT = 1_000_000;
-
-/**
- * Format an amount of micros without ever rounding it.
- *
- * Whole cents show two decimals ($250.00). SMS prices are fractions of a cent,
- * so anything finer shows four ($249.9960), or six if four would hide digits.
- */
-export function formatMoney(micros: number, currency = "USD"): string {
-  const absolute = Math.abs(micros);
-  const whole = Math.trunc(absolute / MICROS_PER_UNIT);
-  const fraction = absolute % MICROS_PER_UNIT;
-  const decimals = fraction % 10_000 === 0 ? 2 : fraction % 100 === 0 ? 4 : 6;
-  const fractionText = String(fraction).padStart(6, "0").slice(0, decimals);
-  const amount = `${whole.toLocaleString("en-US")}.${fractionText}`;
-  const text = currency === "USD" ? `$${amount}` : `${amount} ${currency}`;
-  return micros < 0 ? `-${text}` : text;
-}
 
 export function formatCount(value: number): string {
   return value.toLocaleString("en-US");
@@ -47,41 +28,54 @@ export function epochMicros(iso: string): number {
 }
 
 /*
- * The API speaks UTC. The dashboard shows the browser's local time and always
- * says so: either the value carries its UTC offset, or the region that shows
- * bare times of day names the zone once with localZoneLabel().
+ * The API speaks UTC and so does the console: every time on screen is UTC,
+ * and the column head, the sentence or the value itself says so.
  */
 
-/** Local date and time with milliseconds and the UTC offset: "2026-11-24 23:04:05.123 +08:00". */
+/** A full date and time in UTC, to the second: "2026-11-24 15:04:05 UTC". */
 export function formatDateTime(instant: string | number): string {
-  return format(new Date(instant), "yyyy-MM-dd HH:mm:ss.SSS xxx");
-}
-
-/** Local time of day, for a chart axis. */
-export function formatClock(iso: string): string {
-  return format(new Date(iso), "HH:mm:ss");
-}
-
-/** The browser's UTC offset, for example "UTC+08:00". */
-export function localZoneLabel(): string {
-  return format(new Date(), "'UTC'xxx");
-}
-
-/** Local time of day for a dense table, with the date in front when it is not today. */
-export function formatRowTime(iso: string, now: number): string {
-  const date = new Date(iso);
-  return format(date, isSameDay(date, now) ? "HH:mm:ss" : "MMM d, HH:mm:ss");
+  return `${new Date(instant).toISOString().slice(0, 19).replace("T", " ")} UTC`;
 }
 
 /**
- * Short age for dense tables: "now", "42s ago", "5m ago", "3h ago". From one
- * day on there is none (null), because the date says more.
+ * An amount for a column of amounts: no currency sign, at least `minDecimals`
+ * decimals so a column lines up on the point, more only when they are not
+ * zero ("1,160.7800", "0.000123"). Negative amounts take a true minus sign.
  */
-export function formatAge(iso: string, now: number): string | null {
-  const seconds = Math.floor((now - Date.parse(iso)) / 1_000);
-  if (seconds < 5) return "now";
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3_600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3_600)}h ago`;
-  return null;
+export function formatAmount(micros: number, minDecimals = 4): string {
+  const absolute = Math.abs(micros);
+  const whole = Math.trunc(absolute / MICROS_PER_UNIT);
+  const digits = String(absolute % MICROS_PER_UNIT).padStart(6, "0");
+  const needed = digits.replace(/0+$/, "").length;
+  const fraction = digits.slice(0, Math.max(minDecimals, needed));
+  const amount = fraction
+    ? `${whole.toLocaleString("en-US")}.${fraction}`
+    : whole.toLocaleString("en-US");
+  return micros < 0 ? `−${amount}` : amount;
+}
+
+/** A UTC time of day split where it is set in two inks: "16:13:35" and ".412". */
+export function timeOfDayParts(instant: string | number): { clock: string; millis: string } {
+  const iso = new Date(instant).toISOString();
+  return { clock: iso.slice(11, 19), millis: iso.slice(19, 23) };
+}
+
+/**
+ * How many leading characters every ID in a list shares, cut back to the end
+ * of a whole group ("01a20e9a-"). That part says nothing about which row is
+ * which, so it is set quieter than the rest. With fewer than two IDs nothing
+ * is shared.
+ */
+export function sharedIdPrefix(ids: readonly string[]): number {
+  const [first, ...others] = ids;
+  if (first === undefined || others.length === 0) return 0;
+  let length = first.length;
+  for (const id of others) {
+    let same = 0;
+    while (same < length && same < id.length && id[same] === first[same]) same++;
+    length = same;
+  }
+  // A whole ID shared by every row (the same message twice) is not a prefix.
+  if (length === first.length) return 0;
+  return first.lastIndexOf("-", length - 1) + 1;
 }

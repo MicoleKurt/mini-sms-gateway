@@ -27,7 +27,16 @@ function ThemedToaster() {
     <Toaster
       theme={resolvedTheme === "dark" ? "dark" : "light"}
       position="bottom-right"
-      toastOptions={{ className: "font-sans" }}
+      toastOptions={{
+        className: "font-sans",
+        style: {
+          background: "var(--paper)",
+          color: "var(--ink)",
+          border: "1px solid var(--rule-strong)",
+          borderRadius: "var(--r-control)",
+          boxShadow: "none",
+        },
+      }}
     />
   );
 }
@@ -37,7 +46,7 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <ThemeProvider
-      attribute="class"
+      attribute="data-theme"
       defaultTheme="system"
       enableSystem
       disableTransitionOnChange

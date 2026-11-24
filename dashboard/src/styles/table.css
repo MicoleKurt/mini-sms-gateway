@@ -1,0 +1,123 @@
+/* The data table. Rows are hairlines on paper; the head is a caps label row
+   over an ink rule and stays in view while the page scrolls. */
+
+@layer components {
+  .table-wrap {
+    position: relative;
+    min-width: 0;
+  }
+
+  .t {
+    width: 100%;
+    /* Separate borders: a collapsed border does not travel with a sticky head. */
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .t-compact {
+    --row-pad: var(--row-pad-compact);
+  }
+
+  .t th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 4px 10px 7px;
+    background: var(--paper);
+    box-shadow: inset 0 -1px 0 var(--rule-strong);
+    font-size: var(--t-label);
+    font-weight: var(--w-bold);
+    letter-spacing: 0.06em;
+    line-height: 16px;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--ink-2);
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+
+  /* Row height comes from padding so sans and mono cells share one baseline. */
+  .t td {
+    padding: var(--row-pad) 10px;
+    border-bottom: var(--rule-hair) solid var(--rule);
+    line-height: 16px;
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
+
+  /* The outer cells sit exactly on the shared left and right edges. */
+  .t th:first-child,
+  .t td:first-child {
+    padding-left: 0;
+  }
+
+  .t th:last-child,
+  .t td:last-child {
+    padding-right: 0;
+  }
+
+  .t .r {
+    text-align: right;
+  }
+
+  /* A URL or a carrier error has no spaces, so it may break anywhere. */
+  .t td.wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* A cell whose content is cut to a width, with the full text in a title.
+     A max-width utility on the cell changes the width. */
+  .t td.clip {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .t tbody tr.is-hoverable:hover > td {
+    background: var(--paper-sunk);
+  }
+
+  /* Selected: a sunk ground and medium weight, inside the column grid. */
+  .t tbody tr[data-selected] > td {
+    background: var(--paper-sunk);
+    font-weight: var(--w-medium);
+  }
+
+  /* A row of amounts that closes the table: double rule above, no hairline. */
+  .t tr.t-total > td {
+    border-top: var(--rule-total) double var(--rule-strong);
+    border-bottom: 0;
+    font-weight: var(--w-bold);
+  }
+
+  .t tr.t-total > td.num {
+    font-weight: var(--w-medium);
+  }
+
+  /* A date group: "Tuesday 24 Nov 2026 · 14 messages in view". */
+  .t tr.t-group > td {
+    padding-top: 18px;
+    padding-bottom: 6px;
+    border-bottom-color: var(--rule-strong);
+    font-weight: var(--w-medium);
+    color: var(--ink);
+  }
+
+  /* A gap in a history: "8.39 s with the carrier". */
+  .t tr.t-gap > td {
+    padding-top: 6px;
+    padding-bottom: 6px;
+    font-size: var(--t-small);
+    font-style: italic;
+    color: var(--ink-3);
+  }
+
+  /* An empty, loading or error line that spans the whole table. */
+  .t tr.t-note > td {
+    padding-top: 14px;
+    padding-bottom: 14px;
+    white-space: normal;
+    color: var(--ink-2);
+  }
+}

@@ -1,0 +1,120 @@
+/* Under 768 px: the margin column stacks above its content, the masthead
+   wraps, and wide tables scroll sideways inside their own wrapper. */
+
+/* How far the right edge of a sideways-scrolling table fades, as a cue that
+   more columns follow. Registered so a scroll timeline can animate it. */
+@property --scroll-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@layer components {
+  /* Shown only under 768 px, where it stands in for a hidden column. */
+  .show-narrow {
+    display: none;
+  }
+
+  @media (max-width: 767px) {
+    :root {
+      --page-x: 16px;
+    }
+
+    .page {
+      padding-top: var(--s-5);
+    }
+
+    .sec {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: var(--s-3);
+    }
+
+    /* Stacked, the rule opens the section once, above its name. */
+    .sec-ruled > .sec-b {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .headline {
+      font-size: var(--t-figure);
+    }
+
+    /* Name and theme on the first line, stream state under them, the
+       sections last so the current one's rule stays on the bottom hairline. */
+    .mast {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "brand theme"
+        "stream stream"
+        "nav nav";
+      padding-top: 8px;
+    }
+
+    .mast-brand {
+      grid-area: brand;
+    }
+
+    .mast-end {
+      display: contents;
+    }
+
+    .mast-end > .presets {
+      grid-area: theme;
+    }
+
+    .mast-end > .stream {
+      grid-area: stream;
+      margin-top: 4px;
+    }
+
+    .mast-sections {
+      grid-area: nav;
+    }
+
+    .mast-nav {
+      min-height: 40px;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+
+    .table-wrap.scroll-x {
+      overflow-x: auto;
+      mask-image: linear-gradient(to right, #000 calc(100% - var(--scroll-fade)), transparent);
+      /* The fade is there while there is more to the right, and gone at the
+         end. A table that does not scroll has no timeline and no fade. */
+      animation: scroll-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+
+    /* A column that stays in view while the table scrolls sideways. */
+    .t .pin {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      padding-right: 12px;
+      background: var(--paper);
+    }
+
+    .hide-narrow {
+      display: none;
+    }
+
+    .show-narrow {
+      display: block;
+    }
+
+    .props {
+      grid-template-columns: 96px minmax(0, 1fr);
+    }
+  }
+}
+
+@keyframes scroll-fade {
+  from,
+  92% {
+    --scroll-fade: 32px;
+  }
+  to {
+    --scroll-fade: 0px;
+  }
+}

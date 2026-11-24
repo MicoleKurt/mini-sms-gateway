@@ -67,7 +67,7 @@ export function Tooltip({ content, children, focusable = false, className }: Too
                 top: above ? anchor.top - 6 : anchor.bottom + 6,
                 transform: above ? "translate(-50%, -100%)" : "translate(-50%, 0)",
               }}
-              className="pointer-events-none fixed z-50 w-max max-w-72 animate-fade-in rounded-md bg-ink px-2 py-1.5 text-xs leading-4 text-canvas shadow-lg"
+              className="pointer-events-none fixed z-50 w-max max-w-72 bg-ink px-2 py-1.5 text-small text-paper"
             >
               {content}
             </span>,

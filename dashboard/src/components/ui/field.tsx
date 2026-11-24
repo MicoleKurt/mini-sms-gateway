@@ -4,31 +4,28 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
-import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 
+/** An underline field. Add className="mono" for numbers, IDs and sender names. */
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  // "control" is the base look from globals.css. Utilities in className override it.
-  return <input className={cn("control h-8", className)} {...props} />;
+  return <input className={cn("input", className)} {...props} />;
 }
 
+/** The one filled control: message text, on --paper-sunk with an underline. */
 export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <textarea className={cn("control min-h-28 resize-y py-2 leading-5", className)} {...props} />
-  );
+  return <textarea className={cn("input textarea", className)} {...props} />;
 }
 
 /** A native select: it keeps the platform's keyboard and screen reader behaviour. `className` sizes the wrapper. */
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <span className={cn("relative inline-block", className)}>
-      <select className="control h-8 appearance-none pr-8" {...props}>
+    <span className={cn("select", className)}>
+      <select className="input" {...props}>
         {children}
       </select>
-      <ChevronDown
-        aria-hidden
-        className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-ink-faint"
-      />
+      <svg aria-hidden viewBox="0 0 10 10" className="select-chevron">
+        <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
     </span>
   );
 }
@@ -50,9 +47,9 @@ export function fieldMessageId(controlId: string) {
 }
 
 /**
- * A label, a control and one message line under it. The line shows the hint,
- * or the error while there is one. It always takes its space, so an error
- * appearing does not move the fields below.
+ * A caps label, a control and one message line under it. The line shows the
+ * hint, or the error while there is one. It always takes its space, so an
+ * error appearing does not move the fields below.
  *
  * Only the error is announced. A hint can hold a value that changes all the
  * time (a live balance), which a screen reader must not read out on every
@@ -60,24 +57,19 @@ export function fieldMessageId(controlId: string) {
  */
 export function Field({ htmlFor, label, optional, hint, error, children, className }: FieldProps) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={htmlFor} className="text-xs font-medium text-ink">
+    <div className={cn("field", className)}>
+      <label htmlFor={htmlFor} className="lbl field-label">
         {label}
-        {optional ? <span className="ml-1 font-normal text-ink-faint">optional</span> : null}
+        {optional ? <span className="field-optional">optional</span> : null}
       </label>
       {children}
       {error ? (
         // The key makes this a new element, which is what gets an alert announced.
-        <p
-          key="error"
-          id={fieldMessageId(htmlFor)}
-          role="alert"
-          className="min-h-4 text-xs text-danger-ink"
-        >
+        <p key="error" id={fieldMessageId(htmlFor)} role="alert" className="field-message is-error">
           {error}
         </p>
       ) : (
-        <p key="hint" id={fieldMessageId(htmlFor)} className="min-h-4 text-xs text-ink-muted">
+        <p key="hint" id={fieldMessageId(htmlFor)} className="field-message">
           {hint}
         </p>
       )}

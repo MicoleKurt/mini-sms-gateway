@@ -1,13 +1,15 @@
 "use client";
 
-import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "./button";
 
 const CONFIRMATION_MS = 1_500;
 
-/** Copies `value` to the clipboard and confirms it in place for a moment. */
+/**
+ * A quiet text button that copies `value` to the clipboard. `label` is the
+ * visible text ("Copy ID"); it reads "Copied" for a moment afterwards.
+ */
 export function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -27,8 +29,8 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
   }
 
   return (
-    <Button variant="ghost" size="icon" onClick={copy} aria-label={label}>
-      {copied ? <Check aria-hidden className="text-ok" /> : <Copy aria-hidden />}
+    <Button variant="quiet" onClick={copy} className="text-small">
+      {copied ? "Copied" : label}
       <span role="status" className="sr-only">
         {copied ? "Copied" : ""}
       </span>

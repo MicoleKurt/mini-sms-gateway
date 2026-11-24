@@ -1,260 +1,246 @@
 @import "tailwindcss";
+@import "../styles/base.css";
+@import "../styles/page.css";
+@import "../styles/masthead.css";
+@import "../styles/table.css";
+@import "../styles/status.css";
+@import "../styles/forms.css";
+@import "../styles/states.css";
+@import "../styles/motion.css";
+@import "../styles/responsive.css";
 
-/* next-themes sets class="dark" on <html>. */
-@custom-variant dark (&:where(.dark, .dark *));
+/* next-themes writes data-theme="light" or "dark" on <html>. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/*
- * Design tokens. Surfaces and ink are neutral. The only saturated colours are
- * the seven message statuses and the alert colours, so colour always means
- * something.
- */
+/* ==========================================================================
+   Ledger tokens. A printer's ink set on warm paper.
+
+   The light values below are the default. The dark theme is the one block
+   under :root[data-theme="dark"]; it only re-values roles, it never adds one.
+   Every text role is measured by scripts/check-contrast.mjs (npm run
+   check:contrast) on --paper and --paper-sunk in both themes.
+   ========================================================================== */
 :root {
-  --canvas: #f7f7f8;
-  --surface: #ffffff;
-  --raised: #f1f1f3;
-  --line: #e4e4e7;
-  --line-strong: #d1d1d6;
-  /* The edge of an input or a button. Unlike a divider it marks something to
-     operate, so it has at least 3:1 against every surface it sits on. */
-  --control-border: #8a8a94;
-  --ink: #18181b;
-  --ink-muted: #55555e;
-  --ink-faint: #696973;
-  --primary: #18181b;
-  --on-primary: #fafafa;
-  --focus: #2563eb;
-  --flash: #fde68a;
+  /* Ground. --paper is the only background. --paper-sunk is for things you
+     type into, the hovered or selected row, and the chart headroom band. */
+  --paper: #f5f3ec;
+  --paper-sunk: #ece9df;
 
-  --danger: #dc2626;
-  --danger-ink: #a11b1b;
-  --danger-tint: #fef2f2;
-  --ok: #1f9d55;
-  --ok-ink: #166534;
-  --ok-tint: #f0fdf4;
-  --warn: #cf7004;
-  --warn-ink: #92400e;
-  --warn-tint: #fffbeb;
+  /* Ink: one warm near-black in three strengths, named by job.
+     --ink    figures, names, anything read first
+     --ink-2  supporting text, column heads, units
+     --ink-3  the quietest text allowed: axis labels, dimmed zeros (5:1) */
+  --ink: #1b1a16;
+  --ink-2: #4f4c44;
+  --ink-3: #635f56;
 
-  --status-accepted: #64748b;
-  --status-accepted-ink: #334155;
-  --status-accepted-tint: #eef2f6;
-  --status-queued: #cf7004;
-  --status-queued-ink: #92400e;
-  --status-queued-tint: #fef7da;
-  --status-submitted: #2563eb;
-  --status-submitted-ink: #1e40af;
-  --status-submitted-tint: #dbeafe;
-  --status-delivered: #1f9d55;
-  --status-delivered-ink: #166534;
-  --status-delivered-tint: #e4fbec;
-  --status-undelivered: #c2410c;
-  --status-undelivered-ink: #9a3412;
-  --status-undelivered-tint: #ffedd5;
-  --status-expired: #7c3aed;
-  --status-expired-ink: #5b21b6;
-  --status-expired-tint: #ede9fe;
-  --status-failed: #dc2626;
-  --status-failed-ink: #991b1b;
-  --status-failed-tint: #fee2e2;
+  /* Rules replace boxes. --rule is the hairline between rows; --rule-strong
+     opens a section and closes a total. --control-edge underlines a field. */
+  --rule: #d8d4c8;
+  --rule-strong: var(--ink);
+  --control-edge: var(--ink-3);
+
+  /* Status, as fill and text. A fill draws marks, strips and bars (3:1 on
+     paper); a text role sets the status word (4.5:1 on paper and paper-sunk).
+       stone        ACCEPTED
+       ochre        QUEUED, and time spent in the gateway
+       ultramarine  SUBMITTED, submits to the carrier, the focus ring
+       viridian     DELIVERED, receipts arriving
+       plum         UNDELIVERED (solid) and EXPIRED (hatched)
+       vermilion    FAILED, and anything that needs a human (attention) */
+  --st-accepted: #8a857a;
+  --st-queued: #a87a1c;
+  --st-submitted: #2f55c4;
+  --st-delivered: #1e7a57;
+  --st-undelivered: #8e3f80;
+  --st-expired: var(--st-undelivered);
+  --st-failed: #c23a1c;
+
+  /* The good case stays quiet: DELIVERED and ACCEPTED words are ink. */
+  --st-accepted-text: var(--ink-2);
+  --st-queued-text: #7c5a10;
+  --st-submitted-text: #2848a8;
+  --st-delivered-text: var(--ink);
+  --st-undelivered-text: #7a3370;
+  --st-expired-text: var(--st-undelivered-text);
+  --st-failed-text: #b0341a;
+
+  /* Attention: only the value that crossed a threshold, a dead webhook, a
+     failed attempt, the character that forces UCS-2, a ledger mismatch. */
+  --attention: var(--st-failed-text);
+  --attention-fill: var(--st-failed);
+  --attention-wash: #f1ddd3;
+
+  --focus: var(--st-submitted);
+
+  /* Pipeline strip and outcome bars. Expired is plum hatching on --strip-ground. */
+  --strip-ground: #e4e0d5;
+  --strip-gap: var(--paper);
+
+  /* Throughput chart. */
+  --chart-submitted: var(--st-submitted);
+  --chart-limit: var(--ink);
+  --chart-target: var(--ink-3);
+  --chart-headroom: var(--paper-sunk);
+  --chart-receipts: var(--st-delivered);
+  --chart-grid: #e2ded3;
+  --chart-axis: var(--ink-3);
+
+  /* Detail time strip. */
+  --time-gateway: var(--st-queued);
+  --time-carrier: var(--st-submitted);
+  --time-tenant: var(--st-delivered);
+
+  /* The ink a changed value flashes from for 120 ms. */
+  --flash: var(--st-submitted-text);
+
+  /* Type. Plex Sans for words, Plex Mono for every figure, ID, number and time. */
+  --t-label: 11px;
+  --t-small: 12px;
+  --t-body: 13px;
+  --t-lead: 15px;
+  --t-figure: 24px;
+  --t-display: 30px;
+
+  --lh-tight: 1.2;
+  --lh-body: 1.45;
+
+  --w-regular: 400;
+  --w-medium: 500;
+  --w-bold: 600;
+
+  /* Space, 4-based. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 40px;
+  --s-8: 56px;
+
+  /* Grid: section names hang in the margin column, content starts at one edge. */
+  --page-x: 40px;
+  --margin-col: 184px;
+  --gutter: 32px;
+
+  /* Table rows take their height from padding, so sans and mono share a baseline. */
+  --row-pad: 9px;
+  --row-pad-compact: 6px;
+
+  /* Square by default; 2 px only on things you press or type into. */
+  --r-control: 2px;
+
+  --rule-hair: 1px;
+  --rule-head: 1.5px;
+  --rule-total: 3px;
+
+  /* Only state changes move: a value changing, a row arriving. */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --d-quick: 120ms;
+  --d-state: 240ms;
 
   color-scheme: light;
 }
 
-.dark {
-  --canvas: #0b0b0d;
-  --surface: #131316;
-  --raised: #1b1b1f;
-  --line: #26262b;
-  --line-strong: #36363d;
-  --control-border: #6b6b76;
-  --ink: #ededf0;
-  --ink-muted: #a3a3ad;
-  --ink-faint: #8b8b95;
-  --primary: #ededf0;
-  --on-primary: #0b0b0d;
-  --focus: #60a5fa;
-  --flash: #5c4a14;
+/* Dark: warm soot, not zinc. The one place dark values are written. */
+:root[data-theme="dark"] {
+  --paper: #161512;
+  --paper-sunk: #201f1b;
 
-  --danger: #ef4444;
-  --danger-ink: #fca5a5;
-  --danger-tint: #2a1215;
-  --ok: #2bb673;
-  --ok-ink: #86efac;
-  --ok-tint: #10231a;
-  --warn: #d4910a;
-  --warn-ink: #fcd34d;
-  --warn-tint: #261d0b;
+  --ink: #ece8dd;
+  --ink-2: #b8b3a6;
+  --ink-3: #9a958a;
 
-  --status-accepted: #8492a6;
-  --status-accepted-ink: #cbd5e1;
-  --status-accepted-tint: #1f242c;
-  --status-queued: #d4910a;
-  --status-queued-ink: #fcd34d;
-  --status-queued-tint: #2b2210;
-  --status-submitted: #3b82f6;
-  --status-submitted-ink: #93c5fd;
-  --status-submitted-tint: #16233b;
-  --status-delivered: #2bb673;
-  --status-delivered-ink: #86efac;
-  --status-delivered-tint: #12281e;
-  --status-undelivered: #d9541a;
-  --status-undelivered-ink: #fdba74;
-  --status-undelivered-tint: #2d1a10;
-  --status-expired: #8b5cf6;
-  --status-expired-ink: #c4b5fd;
-  --status-expired-tint: #211a38;
-  --status-failed: #ef4444;
-  --status-failed-ink: #fca5a5;
-  --status-failed-tint: #2e1517;
+  --rule: #34322c;
+
+  --st-accepted: #8a857a;
+  --st-queued: #e0b24c;
+  --st-submitted: #86a2ff;
+  --st-delivered: #56b98b;
+  --st-undelivered: #cf93d6;
+  --st-failed: #f0765a;
+
+  --st-queued-text: #e0b24c;
+  --st-submitted-text: #86a2ff;
+  --st-undelivered-text: #cf93d6;
+  --st-failed-text: #f0765a;
+
+  --attention-wash: #4a2419;
+
+  --strip-ground: #2a2924;
+  --chart-grid: #26251f;
 
   color-scheme: dark;
 }
 
-/*
- * An element with data-status gets that status's three colours. Everything
- * inside it can then use bg-status, text-status-ink and bg-status-tint.
- */
-[data-status="ACCEPTED"] {
-  --status: var(--status-accepted);
-  --status-ink: var(--status-accepted-ink);
-  --status-tint: var(--status-accepted-tint);
-}
-[data-status="QUEUED"] {
-  --status: var(--status-queued);
-  --status-ink: var(--status-queued-ink);
-  --status-tint: var(--status-queued-tint);
-}
-[data-status="SUBMITTED"] {
-  --status: var(--status-submitted);
-  --status-ink: var(--status-submitted-ink);
-  --status-tint: var(--status-submitted-tint);
-}
-[data-status="DELIVERED"] {
-  --status: var(--status-delivered);
-  --status-ink: var(--status-delivered-ink);
-  --status-tint: var(--status-delivered-tint);
-}
-[data-status="UNDELIVERED"] {
-  --status: var(--status-undelivered);
-  --status-ink: var(--status-undelivered-ink);
-  --status-tint: var(--status-undelivered-tint);
-}
-[data-status="EXPIRED"] {
-  --status: var(--status-expired);
-  --status-ink: var(--status-expired-ink);
-  --status-tint: var(--status-expired-tint);
-}
-[data-status="FAILED"] {
-  --status: var(--status-failed);
-  --status-ink: var(--status-failed-ink);
-  --status-tint: var(--status-failed-tint);
+/* Tailwind reads the roles above, so utilities and plain CSS share one source.
+   The default palette, type scale, radii and shadows are switched off: only
+   these exist (text-ink, bg-paper, border-rule, text-st-failed-text, ...). */
+@theme {
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
 }
 
 @theme inline {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
-
-  --color-canvas: var(--canvas);
-  --color-surface: var(--surface);
-  --color-raised: var(--raised);
-  --color-line: var(--line);
-  --color-line-strong: var(--line-strong);
-  --color-control-border: var(--control-border);
+  --color-paper: var(--paper);
+  --color-paper-sunk: var(--paper-sunk);
   --color-ink: var(--ink);
-  --color-ink-muted: var(--ink-muted);
-  --color-ink-faint: var(--ink-faint);
-  --color-primary: var(--primary);
-  --color-on-primary: var(--on-primary);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-control-edge: var(--control-edge);
+  --color-attention: var(--attention);
+  --color-attention-fill: var(--attention-fill);
+  --color-attention-wash: var(--attention-wash);
   --color-focus: var(--focus);
   --color-flash: var(--flash);
-  --color-danger: var(--danger);
-  --color-danger-ink: var(--danger-ink);
-  --color-danger-tint: var(--danger-tint);
-  --color-ok: var(--ok);
-  --color-ok-ink: var(--ok-ink);
-  --color-ok-tint: var(--ok-tint);
-  --color-warn: var(--warn);
-  --color-warn-ink: var(--warn-ink);
-  --color-warn-tint: var(--warn-tint);
-  --color-status: var(--status);
-  --color-status-ink: var(--status-ink);
-  --color-status-tint: var(--status-tint);
 
-  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
-  --animate-fade-in: fade-in 160ms ease-out;
+  --color-st-accepted: var(--st-accepted);
+  --color-st-queued: var(--st-queued);
+  --color-st-submitted: var(--st-submitted);
+  --color-st-delivered: var(--st-delivered);
+  --color-st-undelivered: var(--st-undelivered);
+  --color-st-expired: var(--st-expired);
+  --color-st-failed: var(--st-failed);
+  --color-st-accepted-text: var(--st-accepted-text);
+  --color-st-queued-text: var(--st-queued-text);
+  --color-st-submitted-text: var(--st-submitted-text);
+  --color-st-delivered-text: var(--st-delivered-text);
+  --color-st-undelivered-text: var(--st-undelivered-text);
+  --color-st-expired-text: var(--st-expired-text);
+  --color-st-failed-text: var(--st-failed-text);
 
-  @keyframes shimmer {
-    0% {
-      background-position: 100% 0;
-    }
-    100% {
-      background-position: -100% 0;
-    }
-  }
+  --color-chart-submitted: var(--chart-submitted);
+  --color-chart-limit: var(--chart-limit);
+  --color-chart-target: var(--chart-target);
+  --color-chart-headroom: var(--chart-headroom);
+  --color-chart-receipts: var(--chart-receipts);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-axis: var(--chart-axis);
+  --color-time-gateway: var(--time-gateway);
+  --color-time-carrier: var(--time-carrier);
+  --color-time-tenant: var(--time-tenant);
+  --color-strip-ground: var(--strip-ground);
 
-  /* Opacity only: a transform here would replace the one that positions a tooltip. */
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-}
+  --text-label: var(--t-label);
+  --text-label--line-height: 16px;
+  --text-small: var(--t-small);
+  --text-small--line-height: 17px;
+  --text-body: var(--t-body);
+  --text-body--line-height: var(--lh-body);
+  --text-lead: var(--t-lead);
+  --text-lead--line-height: 1.5;
+  --text-figure: var(--t-figure);
+  --text-figure--line-height: 1.15;
+  --text-display: var(--t-display);
+  --text-display--line-height: 1.22;
 
-@layer base {
-  html {
-    background-color: var(--canvas);
-  }
-
-  body {
-    background-color: var(--canvas);
-    color: var(--ink);
-    font-family: var(--font-sans);
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-    -webkit-font-smoothing: antialiased;
-  }
-
-  /* Numbers line up in columns everywhere, not only in monospace text. */
-  body,
-  .font-mono {
-    font-variant-numeric: tabular-nums;
-  }
-
-  :focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
-  }
-
-  ::selection {
-    background-color: color-mix(in srgb, var(--focus) 28%, transparent);
-  }
-}
-
-/*
- * Base looks that callers adjust with utilities (a width, a smaller font, a
- * different radius). They live in the components layer, which every utility
- * overrides whatever the order of the class names.
- */
-@layer components {
-  .control {
-    @apply w-full rounded-md border border-control-border bg-surface px-2.5 text-sm text-ink placeholder:text-ink-faint disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-danger;
-  }
-
-  .skeleton {
-    @apply block animate-shimmer rounded bg-linear-to-r from-raised via-line to-raised bg-size-[200%_100%];
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
-    scroll-behavior: auto !important;
-  }
+  --radius-control: var(--r-control);
 }

@@ -1,42 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   epochMicros,
-  formatAge,
+  formatAmount,
   formatDateTime,
   formatDuration,
-  formatMoney,
-  formatRowTime,
+  sharedIdPrefix,
+  timeOfDayParts,
 } from "./format";
-
-describe("formatMoney", () => {
-  it.each([
-    [0, "$0.00"],
-    [250_000_000, "$250.00"],
-    [1_000_000_000, "$1,000.00"],
-    [249_996_000, "$249.9960"],
-    [4_000, "$0.0040"],
-    [3_500, "$0.0035"],
-    [38_000, "$0.0380"],
-    [10_000, "$0.01"],
-    [1_234_567_890_000, "$1,234,567.89"],
-  ])("formats %i micros as %s", (micros, expected) => {
-    expect(formatMoney(micros)).toBe(expected);
-  });
-
-  it("shows six decimals instead of rounding sub-0.0001 amounts", () => {
-    expect(formatMoney(123)).toBe("$0.000123");
-    expect(formatMoney(1_000_001)).toBe("$1.000001");
-  });
-
-  it("puts the sign before the currency symbol", () => {
-    expect(formatMoney(-4_000)).toBe("-$0.0040");
-    expect(formatMoney(-12_500_000)).toBe("-$12.50");
-  });
-
-  it("writes other currencies as a code after the amount", () => {
-    expect(formatMoney(4_000, "EUR")).toBe("0.0040 EUR");
-  });
-});
 
 describe("formatDuration", () => {
   it.each([
@@ -66,42 +36,66 @@ describe("epochMicros", () => {
   });
 });
 
-describe("formatAge", () => {
-  const now = Date.parse("2026-11-24T15:00:00Z");
-
-  it.each([
-    ["2026-11-24T14:59:58Z", "now"],
-    ["2026-11-24T14:59:18Z", "42s ago"],
-    ["2026-11-24T14:55:00Z", "5m ago"],
-    ["2026-11-24T12:00:00Z", "3h ago"],
-  ])("formats %s as %s", (iso, expected) => {
-    expect(formatAge(iso, now)).toBe(expected);
-  });
-
-  it("has no age from one day on", () => {
-    expect(formatAge("2026-11-23T15:00:00Z", now)).toBeNull();
+describe("formatDateTime", () => {
+  it("writes a full timestamp in UTC and says so, whatever the zone it came in", () => {
+    expect(formatDateTime("2026-11-25T00:04:05.123+08:00")).toBe("2026-11-24 16:04:05 UTC");
+    expect(formatDateTime(Date.parse("2026-11-24T16:04:05Z"))).toBe("2026-11-24 16:04:05 UTC");
   });
 });
 
-// These run in whatever zone the machine is in, so they build their
-// timestamps from local date parts instead of assuming one.
-describe("local timestamps", () => {
-  const local = new Date(2026, 10, 24, 23, 4, 5, 123);
-
-  it("writes the UTC offset after a full timestamp", () => {
-    expect(formatDateTime(local.toISOString())).toMatch(
-      /^2026-11-24 23:04:05\.123 [+-]\d{2}:\d{2}$/,
-    );
-    expect(formatDateTime(local.getTime())).toBe(formatDateTime(local.toISOString()));
+describe("formatAmount", () => {
+  it.each([
+    [0, "0.0000"],
+    [239_900_000, "239.9000"],
+    [1_160_780_000, "1,160.7800"],
+    [4_000, "0.0040"],
+    [123, "0.000123"],
+    [1_000_001, "1.000001"],
+    [-12_000, "−0.0120"],
+  ])("formats %i micros as %s", (micros, expected) => {
+    expect(formatAmount(micros)).toBe(expected);
   });
 
-  it("shows only the time of day for a row from today", () => {
-    const laterThatDay = new Date(2026, 10, 24, 23, 30).getTime();
-    expect(formatRowTime(local.toISOString(), laterThatDay)).toBe("23:04:05");
+  it("takes a smaller minimum for whole amounts", () => {
+    expect(formatAmount(250_000_000, 0)).toBe("250");
+    expect(formatAmount(250_500_000, 2)).toBe("250.50");
+  });
+});
+
+describe("timeOfDayParts", () => {
+  it("splits a UTC time into clock and milliseconds", () => {
+    expect(timeOfDayParts("2026-11-24T16:13:35.412345+00:00")).toEqual({
+      clock: "16:13:35",
+      millis: ".412",
+    });
   });
 
-  it("puts the date in front for a row from another day", () => {
-    const nextDay = new Date(2026, 10, 25, 0, 10).getTime();
-    expect(formatRowTime(local.toISOString(), nextDay)).toBe("Nov 24, 23:04:05");
+  it("converts an offset to UTC", () => {
+    expect(timeOfDayParts("2026-11-25T00:13:35.004+08:00")).toEqual({
+      clock: "16:13:35",
+      millis: ".004",
+    });
+  });
+});
+
+describe("sharedIdPrefix", () => {
+  it("is the groups every ID starts with", () => {
+    const ids = [
+      "01a20e9a-071e-7f28-8af7-ea86ed07bf4e",
+      "01a20e9a-071f-7cb5-acb5-4c78ffaea071",
+      "01a20e9a-06af-7d07-9ebf-d04faa09e427",
+    ];
+    expect(sharedIdPrefix(ids)).toBe("01a20e9a-".length);
+  });
+
+  it("stops at the end of a whole group, not inside one", () => {
+    expect(sharedIdPrefix(["01a20e9a-071e-7f28", "01a20e9a-071f-7cb5"])).toBe(9);
+    expect(sharedIdPrefix(["01a20e9a-071e-7f28", "01a20e9b-071e-7f28"])).toBe(0);
+  });
+
+  it("shares nothing with fewer than two IDs, or when they are all the same", () => {
+    expect(sharedIdPrefix([])).toBe(0);
+    expect(sharedIdPrefix(["01a20e9a-071e-7f28"])).toBe(0);
+    expect(sharedIdPrefix(["01a20e9a-071e", "01a20e9a-071e"])).toBe(0);
   });
 });

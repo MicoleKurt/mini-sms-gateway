@@ -1,0 +1,192 @@
+/* The page grid, sections, the headline, and the two kinds of fact lists. */
+
+@layer components {
+  .page {
+    padding: 28px var(--page-x) var(--s-8);
+  }
+
+  /* A section: its name hangs in the margin column, content starts at one
+     shared left edge. Sections are separated by space, not by boxes. */
+  .sec {
+    display: grid;
+    grid-template-columns: var(--margin-col) minmax(0, 1fr);
+    column-gap: var(--gutter);
+  }
+
+  .sec + .sec {
+    margin-top: var(--s-7);
+  }
+
+  /* A 1.5 px ink rule opens a ruled section, across both columns. */
+  .sec-ruled > .sec-h,
+  .sec-ruled > .sec-b {
+    border-top: var(--rule-head) solid var(--rule-strong);
+    padding-top: 10px;
+  }
+
+  .sec-h > .lbl {
+    color: var(--ink);
+  }
+
+  .sec-context {
+    margin-top: 2px;
+    font-size: var(--t-small);
+    line-height: 17px;
+    color: var(--ink-2);
+  }
+
+  .sec-b {
+    min-width: 0;
+  }
+
+  /* One display sentence per screen. Figures inside stay tabular so the
+     words do not shift when a live value changes. */
+  .headline {
+    font-size: var(--t-display);
+    line-height: 1.22;
+    font-weight: var(--w-regular);
+    letter-spacing: -0.018em;
+    max-width: 21em;
+    text-wrap: pretty;
+  }
+
+  /* A headline that names a phone number and a duration needs a longer line. */
+  .headline-wide {
+    max-width: 26em;
+  }
+
+  .headline b,
+  .headline strong {
+    font-weight: var(--w-bold);
+  }
+
+  /* At display size mono figures read as a different voice, so the headline
+     keeps Plex Sans and holds its figures with tabular widths instead. */
+  .headline .num {
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: inherit;
+  }
+
+  .lede {
+    margin-top: var(--s-3);
+    max-width: 44em;
+    font-size: var(--t-lead);
+    line-height: 1.5;
+    color: var(--ink-2);
+    text-wrap: pretty;
+  }
+
+  /* Key figures in a statement: label, dotted leader, value. */
+  .leaders {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .leaders > li {
+    display: flex;
+    align-items: baseline;
+    gap: var(--s-2);
+    min-height: 25px;
+  }
+
+  .leaders .leader-k {
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+
+  .leaders .leader-dots {
+    flex: 1;
+    min-width: 12px;
+    border-bottom: 1px dotted var(--ink-3);
+    opacity: 0.6;
+    transform: translateY(-3px);
+  }
+
+  .leaders .leader-v {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums slashed-zero;
+    white-space: nowrap;
+  }
+
+  .leaders .leader-v.is-words {
+    font-family: var(--font-sans);
+  }
+
+  .leaders .leader-note {
+    margin-left: var(--s-2);
+    font-size: var(--t-small);
+    color: var(--ink-3);
+  }
+
+  /* Properties of one record: label column, value column, a hairline each. */
+  .props {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    margin: 0;
+  }
+
+  .props > dt,
+  .props > dd {
+    margin: 0;
+    padding: 7px 0;
+    border-bottom: var(--rule-hair) solid var(--rule);
+  }
+
+  .props > dt {
+    color: var(--ink-2);
+  }
+
+  .props > dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .props small {
+    font-size: var(--t-small);
+    color: var(--ink-3);
+  }
+
+  /* Quoted message text: a left rule, not a filled box. */
+  .quote {
+    margin: 2px 0;
+    padding: 2px 0 2px 12px;
+    border-left: 2px solid var(--rule);
+    font-family: var(--font-mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* Big figures: the 60 s mean, a queue depth. */
+  .figure {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-size: var(--t-figure);
+    line-height: 1.15;
+    letter-spacing: -0.03em;
+  }
+
+  .figure-mid {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-size: var(--t-lead);
+  }
+
+  .figure small,
+  .figure-mid small {
+    margin-left: 2px;
+    font-size: var(--t-small);
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+
+  /* A line of text that stands in for content while it loads. */
+  .skel {
+    display: block;
+    height: 0.72em;
+    margin: 0.32em 0 0.42em;
+    background: var(--paper-sunk);
+  }
+}

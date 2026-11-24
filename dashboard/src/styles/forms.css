@@ -1,0 +1,225 @@
+/* Fields are underlines, not boxes. Buttons are ink: solid, outline, or a
+   quiet underlined word. Nothing here takes a status colour. */
+
+@layer components {
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-1);
+    min-width: 0;
+  }
+
+  .field-label .field-optional {
+    margin-left: 6px;
+    font-weight: var(--w-regular);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-3);
+  }
+
+  .field-message {
+    min-height: 17px;
+    font-size: var(--t-small);
+    line-height: 17px;
+    color: var(--ink-2);
+  }
+
+  .field-message.is-error {
+    color: var(--attention);
+  }
+
+  .input {
+    display: block;
+    width: 100%;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--control-edge);
+    border-radius: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+  }
+
+  .input::placeholder {
+    color: var(--ink-3);
+    opacity: 1;
+  }
+
+  .input:hover {
+    border-bottom-color: var(--ink);
+  }
+
+  .input[aria-invalid="true"] {
+    border-bottom: 1.5px solid var(--attention-fill);
+  }
+
+  .input:disabled {
+    color: var(--ink-3);
+    cursor: not-allowed;
+  }
+
+  .textarea {
+    min-height: 132px;
+    height: auto;
+    padding: 12px 14px;
+    border-radius: var(--r-control) var(--r-control) 0 0;
+    background: var(--paper-sunk);
+    font-size: var(--t-lead);
+    line-height: 1.55;
+    resize: vertical;
+  }
+
+  .select {
+    position: relative;
+    display: block;
+    min-width: 0;
+  }
+
+  .select > select {
+    padding-right: 20px;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .select > select option {
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  .select > .select-chevron {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    margin-top: -5px;
+    pointer-events: none;
+    color: var(--ink-2);
+  }
+
+  /* A group of presets of which one is current (range, theme). */
+  .presets {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .preset {
+    height: 26px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--r-control);
+    background: none;
+    color: var(--ink-2);
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .preset:hover {
+    color: var(--ink);
+  }
+
+  .preset[aria-pressed="true"] {
+    background: var(--paper-sunk);
+    color: var(--ink);
+    font-weight: var(--w-medium);
+  }
+
+  .btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 36px;
+    padding: 0 16px;
+    border: 1.5px solid transparent;
+    border-radius: var(--r-control);
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    font-weight: var(--w-medium);
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  .btn-primary:hover {
+    background: color-mix(in srgb, var(--ink) 86%, var(--paper));
+  }
+
+  /* The primary action before there is anything it could do: an outline in
+     ink-3, so the solid ink only appears once the draft can be sent. */
+  .btn-primary.is-unready {
+    border-color: var(--ink-3);
+    background: none;
+    color: var(--ink-2);
+  }
+
+  .btn-secondary {
+    border-color: var(--ink);
+  }
+
+  .btn-secondary:hover {
+    background: var(--paper-sunk);
+  }
+
+  .btn-quiet {
+    height: auto;
+    min-height: 28px;
+    padding: 0 2px;
+    border: 0;
+    color: var(--ink-2);
+    text-decoration: underline;
+    text-decoration-color: var(--rule);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+  }
+
+  .btn-quiet:hover {
+    color: var(--ink);
+    text-decoration-color: currentColor;
+  }
+
+  .btn-sm {
+    height: 28px;
+    padding: 0 10px;
+  }
+
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+/* The message filters besides search. On a wide screen they sit in the
+   search row; on a phone they fold behind the "Filters" button and stack.
+   Outside the layers, so the stack wins over the row's flex utilities. */
+.filter-more {
+  display: contents;
+}
+
+@media (max-width: 767px) {
+  .filter-more {
+    display: none;
+  }
+
+  .filter-more.is-open {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-5);
+    width: 100%;
+  }
+
+  .filter-more.is-open > * {
+    flex: none;
+  }
+}

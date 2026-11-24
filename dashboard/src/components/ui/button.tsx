@@ -1,25 +1,22 @@
 import type { ComponentProps, MouseEvent } from "react";
 import { cn } from "@/lib/cn";
 
-type Variant = "primary" | "secondary" | "ghost";
-/** "icon" is a square button for a single icon. Give it an aria-label. */
-type Size = "sm" | "md" | "icon";
-
-const BASE =
-  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap " +
-  "transition-colors disabled:pointer-events-none disabled:opacity-50 " +
-  "aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0";
+/**
+ * primary: solid ink, one per screen (Send). secondary: an ink outline.
+ * quiet: an underlined word (Clear, Reset, Retry).
+ */
+type Variant = "primary" | "secondary" | "quiet";
+type Size = "sm" | "md";
 
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-primary text-on-primary hover:bg-primary/85",
-  secondary: "border border-control-border bg-surface text-ink hover:bg-raised",
-  ghost: "text-ink-muted hover:bg-raised hover:text-ink",
+  primary: "btn-primary",
+  secondary: "btn-secondary",
+  quiet: "btn-quiet",
 };
 
-const SIZES: Record<Size, string> = {
-  sm: "h-7 px-2 text-xs",
-  md: "h-8 px-3 text-sm",
-  icon: "size-7",
+const SIZES: Record<Size, string | undefined> = {
+  sm: "btn-sm",
+  md: undefined,
 };
 
 interface ButtonStyle {
@@ -30,7 +27,7 @@ interface ButtonStyle {
 
 /** The button look as a class string, for links that should look like buttons. */
 export function buttonClasses({ variant = "secondary", size = "md", className }: ButtonStyle = {}) {
-  return cn(BASE, VARIANTS[variant], SIZES[size], className);
+  return cn("btn", VARIANTS[variant], variant !== "quiet" && SIZES[size], className);
 }
 
 type ButtonProps = ComponentProps<"button"> & ButtonStyle;
