@@ -96,6 +96,7 @@ one transaction, or none is. `202 Accepted`:
   "total_segments": 1,
   "total_cost_micros": 4000,
   "currency": "USD",
+  "created_at": "2026-11-24T15:04:05.123456Z",
   "messages": [ { "id": "019a...", "status": "ACCEPTED", "to": "+8801711000001",
                   "client_ref": "c1", "encoding": "GSM7", "segments": 1, "cost_micros": 4000 } ]
 }
@@ -260,7 +261,7 @@ the same code path (validation, price, charge, queue). Accepts `Idempotency-Key`
 ```json
 {
   "queue": { "depth": 9120, "oldest_age_ms": 2140, "in_flight": 31 },
-  "carrier": { "limit_per_second": 50, "target_per_second": 47.0 },
+  "carrier": { "limit_per_second": 50, "target_per_second": 46.0 },
   "throughput": [ { "t": "2026-11-24T15:04:05Z", "submitted": 47, "finalized": 41 } ],
   "billing": [ { "tenant_id": "…", "consistent": true, "double_charged": 0 } ],
   "webhooks": { "pending": 12, "delivered": 4810, "dead": 0 }

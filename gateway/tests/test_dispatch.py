@@ -385,3 +385,34 @@ async def test_a_429_slows_every_worker_down(
     other_worker = RateLimiter(redis_client, rate_per_second=10, burst=1)
     granted, wait = await other_worker.acquire(1)
     assert granted == 0 and wait > 0.3
+
+
+async def test_a_late_result_and_a_reclaim_of_the_same_message_do_not_deadlock(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict
+) -> None:
+    """Worker A reports a late 503 at the instant worker B re-claims the message.
+    Both touch the message row and the open attempt row; they must take the
+    locks in the same order."""
+    from gateway.carrier import Outcome, SubmitResult
+    from gateway.dispatch import record_retry
+    from gateway.retry import Action, Decision
+
+    for _ in range(25):
+        message_id = await send(client, acme)
+        stale = await claim_one(pool, "w-stale", lease_seconds=30)
+        assert stale is not None
+        await _expire_lease(pool, message_id)
+
+        _, reclaimed = await asyncio.gather(
+            record_retry(pool, stale, SubmitResult(Outcome.UNAVAILABLE, 503), Decision(Action.RETRY)),
+            claim_one(pool, "w-new", lease_seconds=30),
+        )
+
+        row = await message_row(pool, message_id)
+        assert row["status"] == "QUEUED"
+        # Whichever ran first, the message ends up claimed exactly once more or
+        # ready to be claimed; it is never lost and never claimed twice.
+        assert row["attempts"] in (1, 2)
+        if reclaimed is not None:
+            assert (reclaimed.attempt, row["attempts"]) == (2, 2)
+        await pool.execute("UPDATE messages SET status = 'FAILED' WHERE id = $1::uuid", message_id)

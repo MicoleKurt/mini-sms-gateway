@@ -177,6 +177,17 @@ async def release_claim(pool: asyncpg.Pool, msg: Claimed) -> None:
             )
 
 
+async def _lock_message(conn: asyncpg.Connection, msg: Claimed) -> None:
+    """Take the message row lock before touching its attempt rows.
+
+    Lock order everywhere is: carrier_id advisory lock, then the message row,
+    then its attempt rows. The claim statement locks the message and then
+    closes an old attempt; without the same order here, a worker recording a
+    late result and a worker re-claiming the same message could deadlock.
+    """
+    await conn.execute("SELECT 1 FROM messages WHERE id = $1 FOR UPDATE", msg.id)
+
+
 async def _close_attempt(
     conn: asyncpg.Connection, msg: Claimed, result: SubmitResult, carrier_id: str | None = None
 ) -> None:
@@ -207,6 +218,7 @@ async def record_accepted(pool: asyncpg.Pool, msg: Claimed, result: SubmitResult
     async with pool.acquire() as conn, conn.transaction():
         # Same lock as the DLR endpoint. See gateway.dlr for why.
         await lock_carrier_id(conn, carrier_id)
+        await _lock_message(conn, msg)
 
         owner = await conn.fetchval(
             "SELECT message_id FROM submit_attempts WHERE carrier_id = $1", carrier_id
@@ -237,6 +249,7 @@ async def record_accepted(pool: asyncpg.Pool, msg: Claimed, result: SubmitResult
 async def record_retry(pool: asyncpg.Pool, msg: Claimed, result: SubmitResult, decision: Decision) -> None:
     """Not accepted, or unknown: make the message visible again after the backoff."""
     async with pool.acquire() as conn, conn.transaction():
+        await _lock_message(conn, msg)
         await _close_attempt(conn, msg, result)
         await conn.execute(
             """
@@ -258,6 +271,7 @@ async def record_failed(
 ) -> list[StatusChange]:
     """Permanent error or no attempts left: QUEUED -> FAILED with a refund."""
     async with pool.acquire() as conn, conn.transaction():
+        await _lock_message(conn, msg)
         detail: dict[str, Any] = {"attempt": msg.attempt}
         if result is not None:
             await _close_attempt(conn, msg, result)
