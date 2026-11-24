@@ -49,10 +49,18 @@ async def fail_message(
 
 
 async def finalize_from_dlr(
-    conn: asyncpg.Connection, message_id: uuid.UUID, status: str, *, detail: dict[str, Any]
+    conn: asyncpg.Connection,
+    message_id: uuid.UUID,
+    status: str,
+    *,
+    detail: dict[str, Any],
+    failure_reason: str | None = None,
 ) -> StatusChange | None:
-    """SUBMITTED -> DELIVERED | UNDELIVERED | EXPIRED, queue the tenant webhook."""
-    change = await transition(conn, message_id, status, detail=detail)
+    """SUBMITTED -> DELIVERED | UNDELIVERED | EXPIRED, queue the tenant webhook.
+
+    Also used by the sweep for a DLR that never came (`gateway.sweeper`).
+    """
+    change = await transition(conn, message_id, status, detail=detail, failure_reason=failure_reason)
     if change is None:
         return None
     await enqueue_webhook(conn, change.message)

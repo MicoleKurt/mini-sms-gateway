@@ -93,7 +93,11 @@ services:
   dispatcher:
     <<: *gateway
     command: ["python", "-m", "gateway.runner", "dispatcher"]
-    environment: *gateway-env
+    environment:
+      <<: *gateway-env
+      # Prometheus metrics of this process (submit outcomes and timings).
+      # Not published on the host: two replicas would clash on one host port.
+      METRICS_PORT: "9464"
     deploy:
       replicas: 2
     depends_on:
@@ -107,7 +111,10 @@ services:
   webhooks:
     <<: *gateway
     command: ["python", "-m", "gateway.runner", "webhooks"]
-    environment: *gateway-env
+    environment:
+      <<: *gateway-env
+      # Prometheus metrics of this process (webhook results, DLR sweep).
+      METRICS_PORT: "9464"
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -23,13 +23,17 @@ CHANNEL = "smsgw:live"
 
 
 class LivePublisher:
-    def __init__(self, redis: Any, channel: str = CHANNEL) -> None:
+    def __init__(self, redis: Any, channel: str = CHANNEL, *, timeout_seconds: float = 0.25) -> None:
         self._redis = redis
         self._channel = channel
+        self._timeout = timeout_seconds
 
     async def publish(self, event_type: str, payload: dict[str, Any]) -> None:
+        message = json.dumps({"type": event_type, "data": payload})
         try:
-            await self._redis.publish(self._channel, json.dumps({"type": event_type, "data": payload}))
+            # Bounded: a Valkey that holds the connection without answering
+            # would otherwise keep a committed send from getting its 202.
+            await asyncio.wait_for(self._redis.publish(self._channel, message), timeout=self._timeout)
         except Exception:  # the stream must never break a request or a worker
             log.warning("could not publish live event %s", event_type, exc_info=True)
 

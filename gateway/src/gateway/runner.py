@@ -1,7 +1,7 @@
 """Entry points for the background processes.
 
     python -m gateway.runner dispatcher
-    python -m gateway.runner webhooks
+    python -m gateway.runner webhooks      # tenant callbacks, and the sweep for lost DLRs
 
 Each is its own process with its own connection pool. They share nothing in
 memory: coordination goes through PostgreSQL (the queue and its leases) and
@@ -16,7 +16,6 @@ import contextlib
 import logging
 import signal
 
-import redis.asyncio as aioredis
 from prometheus_client import start_http_server
 
 from gateway.carrier import CarrierClient
@@ -25,6 +24,8 @@ from gateway.db import create_pool, wait_for_database
 from gateway.dispatch import Dispatcher
 from gateway.limiter import RateLimiter
 from gateway.live import LivePublisher
+from gateway.sweeper import DlrSweeper
+from gateway.valkey import connect
 from gateway.webhooks import WebhookWorker
 
 log = logging.getLogger("gateway.runner")
@@ -44,7 +45,7 @@ async def run_dispatcher(settings: Settings) -> None:
     pool = await create_pool(
         settings.database_url, min_size=settings.db_pool_min, max_size=settings.db_pool_max
     )
-    redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+    redis_client = connect(settings.redis_url, timeout_seconds=settings.redis_timeout_seconds)
     carrier = CarrierClient(
         settings.carrier_url,
         timeout_seconds=settings.carrier_timeout_seconds,
@@ -76,10 +77,14 @@ async def run_webhooks(settings: Settings) -> None:
         settings.database_url, min_size=settings.db_pool_min, max_size=settings.db_pool_max
     )
     worker = WebhookWorker(pool=pool, settings=settings)
+    sweeper = DlrSweeper(pool=pool, settings=settings)
     stop = asyncio.Event()
     _install_signal_handlers(stop)
     try:
-        await worker.run(stop)
+        # A TaskGroup, so that if one loop fails the other is cancelled too.
+        async with asyncio.TaskGroup() as group:
+            group.create_task(worker.run(stop))
+            group.create_task(sweeper.run(stop))
     finally:
         await worker.aclose()
         await pool.close()

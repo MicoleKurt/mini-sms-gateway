@@ -8,17 +8,17 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import asyncpg
-import redis.asyncio as aioredis
 from fastapi import FastAPI, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from gateway import queries
+from gateway import metrics, queries
 from gateway.api import carrier_callbacks, internal, tenant
 from gateway.config import Settings, get_settings
 from gateway.db import create_pool
 from gateway.errors import ApiError, install_error_handlers
 from gateway.live import LiveHub, LivePublisher
 from gateway.pricing import PriceCache
+from gateway.valkey import connect, connect_subscriber
 
 log = logging.getLogger(__name__)
 
@@ -41,11 +41,13 @@ def create_app(
         app.state.pool = pool or await create_pool(
             settings.database_url, min_size=settings.db_pool_min, max_size=settings.db_pool_max
         )
-        app.state.redis = redis_client or aioredis.from_url(settings.redis_url, decode_responses=True)
+        timeout = settings.redis_timeout_seconds
+        app.state.redis = redis_client or connect(settings.redis_url, timeout_seconds=timeout)
+        subscriber = redis_client or connect_subscriber(settings.redis_url, timeout_seconds=timeout)
         app.state.publisher = LivePublisher(app.state.redis, settings.live_channel)
         app.state.prices = PriceCache(app.state.pool, settings.price_cache_seconds)
         app.state.hub = LiveHub(
-            app.state.redis, lambda: queries.live_stats(app.state.pool), channel=settings.live_channel
+            subscriber, lambda: queries.live_stats(app.state.pool), channel=settings.live_channel
         )
         await app.state.hub.start()
         try:
@@ -54,6 +56,7 @@ def create_app(
             await app.state.hub.stop()
             if owns_redis:
                 await app.state.redis.aclose()
+                await subscriber.aclose()
             if owns_pool:
                 await app.state.pool.close()
 
@@ -83,7 +86,13 @@ def create_app(
 
     @app.get("/metrics", tags=["ops"])
     async def prometheus_metrics() -> Response:
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+        # The queue gauges are read at scrape time; otherwise they would only
+        # move while a dashboard is connected.
+        try:
+            await queries.queue_stats(app.state.pool)
+        except Exception:
+            log.warning("could not refresh the queue gauges", exc_info=True)
+        return Response(generate_latest() + generate_latest(metrics.API_ONLY), media_type=CONTENT_TYPE_LATEST)
 
     return app
 
