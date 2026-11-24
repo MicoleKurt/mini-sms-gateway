@@ -141,8 +141,10 @@ measurement:
 - `received`, `accepted`: submits seen and submits accepted.
 - `rate_limited (429)`: submits refused for exceeding the limit. Zero means the
   gateway's pacing never overshot.
-- `max_submits_in_one_second`: the busiest second. The line states whether it
-  stayed within the limit of 50.
+- `max_submits_in_one_second`: the largest number of submits the carrier
+  admitted in any one second. It cannot be above the carrier's own limit, so
+  the line says "stayed within the limit of 50" only when this peak is at most
+  50 and `rate_limited` is 0.
 - `timeouts`: submits the carrier accepted without answering.
 - `duplicate_accepts`: accepted submits for a message that had already been
   accepted, which is an SMS that would reach a handset twice.

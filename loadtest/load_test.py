@@ -802,7 +802,10 @@ def submit_rate_lines(summary: SubmitSummary) -> list[str]:
 
 def carrier_lines(stats: Json, was_reset: bool) -> list[str]:
     peak = stats["max_submits_in_one_second"]
-    verdict = "stayed within" if peak <= CARRIER_LIMIT_PER_SECOND else "WENT ABOVE"
+    # The carrier only counts submits it admitted, so its peak cannot exceed its
+    # own limit. A 429 is the evidence that the gateway pushed harder than that.
+    within = stats["rate_limited"] == 0 and peak <= CARRIER_LIMIT_PER_SECOND
+    verdict = "stayed within" if within else "WENT ABOVE"
     first = parse_time(stats["first_submit_at"]) if stats["first_submit_at"] else None
     last = parse_time(stats["last_submit_at"]) if stats["last_submit_at"] else None
     scope = (
