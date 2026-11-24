@@ -154,15 +154,15 @@ API (plus the mock carrier's `/stats`) and checks the money itself from the
 ledger. Output of one real run:
 
 <!-- LOAD_OUTPUT_START -->
-This run: Windows 11, PostgreSQL 16, two dispatcher processes, every service as a local process (not in Docker), with a Python Redis stand-in in place of Valkey.
+This run: `docker compose up` on a GitHub Actions Linux runner (the `e2e` job in [ci.yml](.github/workflows/ci.yml)), two dispatcher containers, PostgreSQL 17, Valkey 8.
 
 ```text
 SMS gateway load test
 =====================
-  Run id         b5a23c9e
-  Started (UTC)  2026-11-24T15:53:54Z
-  Gateway        http://127.0.0.1:8000
-  Carrier        http://127.0.0.1:9000
+  Run id         e6260953
+  Started (UTC)  2026-11-24T17:14:43Z
+  Gateway        http://gateway:8000
+  Carrier        http://mock-carrier:9000
   Campaign       10000 ShopFast messages, 1000 per batch
   OTP            one Acme Bank message every 1 s
   Deadline       900 s
@@ -170,56 +170,56 @@ SMS gateway load test
 Progress (campaign status counts for this run)
 ----------------------------------------------
    elapsed  ACCEPTED  QUEUED  SUBMITTED  DELIVERED  UNDELIVERED  EXPIRED  FAILED  OTPs sent
-      5.0s         0    9801        154         37            5        0       3          5
-     35.1s         0    8494        207       1158          100       30      11         36
-     65.2s         0    7199        190       2332          186       71      22         66
-     95.3s         0    5910        209       3463          278      110      30         96
-    125.5s         0    4605        219       4622          361      150      43        126
-    155.6s         0    3302        214       5786          453      189      56        156
-    185.6s         0    2004        196       6962          540      233      65        186
-    215.8s         0     705        204       8087          649      273      82        216
-    245.8s         0       0          0       8904          711      293      92        242
+      5.0s         0    9804        142         48            3        1       2          5
+     35.1s         0    8501        210       1149           89       38      13         36
+     65.2s         0    7195        212       2291          196       76      30         66
+     95.3s         0    5894        206       3459          274      124      43         96
+    125.4s         0    4594        200       4625          358      166      57        126
+    155.4s         0    3302        199       5779          457      200      63        156
+    185.5s         0    2011        200       6932          543      240      74        186
+    215.5s         0     711        213       8069          641      282      84        216
+    245.8s         0       0          0       8884          712      310      94        242
 
 Timing
 ------
-  Campaign accepted by the gateway  0.9 s (10000 messages)
+  Campaign accepted by the gateway  2.4 s (10000 messages)
   All campaign messages final       241.7 s
-  All messages final (total time)   247.8 s (242 OTPs sent meanwhile)
+  All messages final (total time)   249.8 s (242 OTPs sent meanwhile)
 
 Submit rate to the carrier
 --------------------------
   Gateway view (GET /v1/messages, this run's messages)
-    Submit attempts     10673
-    Messages submitted  10147
-    First submitted_at  2026-11-24T15:53:55.315241Z
-    Last submitted_at   2026-11-24T15:57:56.365797Z
-    Window              241.1 s
-    Average rate        44.3 per second
+    Submit attempts     10659
+    Messages submitted  10146
+    First submitted_at  2026-11-24T17:14:43.695293Z
+    Last submitted_at   2026-11-24T17:18:44.639829Z
+    Window              240.9 s
+    Average rate        44.2 per second
   Carrier view (GET /stats, since the reset before this run)
-    received                   10673
-    accepted                   10265
+    received                   10659
+    accepted                   10259
     rate_limited (429)         0
     max_submits_in_one_second  48 (stayed within the limit of 50)
-    timeouts                   118
-    duplicate_accepts          118
-    Average rate               44.3 per second
+    timeouts                   113
+    duplicate_accepts          110
+    Average rate               44.2 per second
 
 OTP latency, accept to SUBMITTED
 --------------------------------
   OTPs accepted                       242
-  Never reached SUBMITTED (excluded)  3
-  n                                   239
-  p50                                 224 ms
-  p95                                 451 ms
-  max                                 2570 ms
+  Never reached SUBMITTED (excluded)  2
+  n                                   240
+  p50                                 260 ms
+  p95                                 839 ms
+  max                                 2718 ms
 
 Final states (this run)
 -----------------------
   Status          shopfast  acme-bank  Total
-  DELIVERED           8904        211   9115
-  UNDELIVERED          711         19    730
-  EXPIRED              293          9    302
-  FAILED                92          3     95
+  DELIVERED           8884        223   9107
+  UNDELIVERED          712         11    723
+  EXPIRED              310          6    316
+  FAILED                94          2     96
   Total              10000        242  10242
   Accepted (202)     10000        242  10242
 
@@ -227,30 +227,30 @@ Billing check
 -------------
   shopfast
     Opening balance                     1000.000000 USD
-    Balance before this run              960.512000 USD
-    Balance now                          920.880000 USD
-    Ledger entries read                       20220
+    Balance before this run             1000.000000 USD
+    Balance now                          960.376000 USD
+    Ledger entries read                       10094
     Gateway's own 'consistent' flag            true
-    PASS  balance = opening balance - ledger sum           (920.880000 = 1000.000000 - 79.120000)
+    PASS  balance = opening balance - ledger sum           (960.376000 = 1000.000000 - 39.624000)
     PASS  no message charged twice                         (message ids with more than one CHARGE: 0)
     PASS  no message refunded twice                        (message ids with more than one REFUND: 0)
     PASS  run: each message charged once, at its cost      (0 of 10000 differ)
-    PASS  run: each FAILED message refunded once, in full  (0 of 92 differ)
+    PASS  run: each FAILED message refunded once, in full  (0 of 94 differ)
     PASS  run: no refund on a message that is not FAILED   (0 found)
-    PASS  balance never negative                           (lowest seen 920.512000)
+    PASS  balance never negative                           (lowest seen 960.004000)
   acme-bank
     Opening balance                      250.000000 USD
-    Balance before this run              244.960000 USD
-    Balance now                          239.941000 USD
-    Ledger entries read                         489
+    Balance before this run              250.000000 USD
+    Balance now                          244.960000 USD
+    Ledger entries read                         244
     Gateway's own 'consistent' flag            true
-    PASS  balance = opening balance - ledger sum           (239.941000 = 250.000000 - 10.059000)
+    PASS  balance = opening balance - ledger sum           (244.960000 = 250.000000 - 5.040000)
     PASS  no message charged twice                         (message ids with more than one CHARGE: 0)
     PASS  no message refunded twice                        (message ids with more than one REFUND: 0)
     PASS  run: each message charged once, at its cost      (0 of 242 differ)
-    PASS  run: each FAILED message refunded once, in full  (0 of 3 differ)
+    PASS  run: each FAILED message refunded once, in full  (0 of 2 differ)
     PASS  run: no refund on a message that is not FAILED   (0 found)
-    PASS  balance never negative                           (lowest seen 239.941000)
+    PASS  balance never negative                           (lowest seen 244.960000)
 
 Result: PASS
 ```
@@ -259,10 +259,26 @@ Progress lines are thinned to one per 30 seconds here; the complete output is in
 [docs/load-test-run.txt](docs/load-test-run.txt).
 <!-- LOAD_OUTPUT_END -->
 
+How to read it:
+
+- **Carrier limit.** No submit was answered 429, and the carrier's worst second
+  saw 48 submits. The gateway paces at 46 per second with a burst of two, so 48
+  is the most it can send in any one-second window.
+- **OTP during the campaign.** Half of the OTPs were `SUBMITTED` within 260 ms of
+  being accepted, and that includes the carrier's own response time of 20 to
+  300 ms. The slow tail is OTPs whose first submit got a 503 or a timeout and
+  were retried.
+- **`duplicate_accepts: 110`.** The carrier accepted 110 messages twice, one for
+  almost every submit it timed out on after accepting. This is the risk the
+  brief asks about, measured from the carrier's side. Each of those messages is
+  flagged in the database. With `IDEMPOTENT_SUBMIT=true` the number is 0.
+- **Money.** Every check is computed by the script from the ledger it read
+  through the public API.
+
 ## Tests
 
 ```
-docker compose run --rm tests        # gateway: 173 tests against real PostgreSQL and Valkey
+docker compose run --rm tests        # gateway: 174 tests against real PostgreSQL and Valkey
 ```
 
 Without Docker, with a PostgreSQL database whose name ends in `_test`:

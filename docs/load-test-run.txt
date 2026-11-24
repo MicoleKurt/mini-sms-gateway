@@ -1,9 +1,9 @@
 SMS gateway load test
 =====================
-  Run id         b5a23c9e
-  Started (UTC)  2026-11-24T15:53:54Z
-  Gateway        http://127.0.0.1:8000
-  Carrier        http://127.0.0.1:9000
+  Run id         e6260953
+  Started (UTC)  2026-11-24T17:14:43Z
+  Gateway        http://gateway:8000
+  Carrier        http://mock-carrier:9000
   Campaign       10000 ShopFast messages, 1000 per batch
   OTP            one Acme Bank message every 1 s
   Deadline       900 s
@@ -11,96 +11,96 @@ SMS gateway load test
 Progress (campaign status counts for this run)
 ----------------------------------------------
    elapsed  ACCEPTED  QUEUED  SUBMITTED  DELIVERED  UNDELIVERED  EXPIRED  FAILED  OTPs sent
-      5.0s         0    9801        154         37            5        0       3          5
-     10.0s         0    9582        201        192           18        2       5         11
-     15.0s         0    9364        199        391           32        7       7         16
-     20.1s         0    9140        217        570           53       12       8         21
-     25.1s         0    8932        214        762           66       17       9         26
-     30.1s         0    8713        222        947           87       22       9         31
-     35.1s         0    8494        207       1158          100       30      11         36
-     40.1s         0    8276        215       1344          116       37      12         41
-     45.2s         0    8061        207       1540          133       43      16         46
-     50.2s         0    7852        184       1743          150       53      18         51
-     55.2s         0    7634        207       1924          157       58      20         56
-     60.2s         0    7416        205       2119          176       63      21         61
-     65.2s         0    7199        190       2332          186       71      22         66
-     70.2s         0    6981        197       2516          206       76      24         71
-     75.3s         0    6764        210       2700          222       80      24         76
-     80.3s         0    6553        217       2874          240       89      27         81
-     85.3s         0    6337        194       3086          256       99      28         86
-     90.3s         0    6124        211       3263          268      105      29         91
-     95.3s         0    5910        209       3463          278      110      30         96
-    100.4s         0    5691        223       3648          292      115      31        101
-    105.4s         0    5477        203       3859          304      126      31        106
-    110.4s         0    5255        206       4054          317      131      37        111
-    115.4s         0    5039        207       4241          335      139      39        116
-    120.4s         0    4817        210       4441          346      144      42        121
-    125.5s         0    4605        219       4622          361      150      43        126
-    130.5s         0    4387        209       4825          378      157      44        131
-    135.5s         0    4172        214       5011          394      162      47        136
-    140.5s         0    3959        204       5217          403      168      49        141
-    145.5s         0    3741        219       5395          415      178      52        146
-    150.5s         0    3521        211       5595          434      185      54        151
-    155.6s         0    3302        214       5786          453      189      56        156
-    160.6s         0    3086        208       5978          470      200      58        161
-    165.6s         0    2869        205       6173          482      210      61        166
-    170.6s         0    2652        212       6353          507      214      62        171
-    175.6s         0    2433        210       6554          518      221      64        176
-    180.6s         0    2218        206       6756          528      228      64        181
-    185.6s         0    2004        196       6962          540      233      65        186
-    190.7s         0    1785        191       7157          559      241      67        191
-    195.7s         0    1567        207       7333          578      245      70        196
-    200.7s         0    1352        209       7519          599      250      71        201
-    205.7s         0    1142        198       7712          614      260      74        206
-    210.7s         0     921        213       7892          630      266      78        211
-    215.8s         0     705        204       8087          649      273      82        216
-    220.8s         0     492        193       8291          662      280      82        221
-    225.8s         0     275        202       8475          677      286      85        226
-    230.8s         0      56        203       8668          694      288      91        231
-    235.8s         0       0         92       8821          703      292      92        236
-    240.8s         0       0          1       8903          711      293      92        241
-    245.8s         0       0          0       8904          711      293      92        242
+      5.0s         0    9804        142         48            3        1       2          5
+     10.1s         0    9582        206        187           14        9       2         11
+     15.1s         0    9363        213        378           28       15       3         16
+     20.1s         0    9143        219        565           41       22      10         21
+     25.1s         0    8931        207        774           51       26      11         26
+     30.1s         0    8716        215        958           69       30      12         31
+     35.1s         0    8501        210       1149           89       38      13         36
+     40.1s         0    8282        221       1330          112       41      14         41
+     45.1s         0    8061        201       1539          130       51      18         46
+     50.1s         0    7847        198       1734          143       59      19         51
+     55.1s         0    7633        218       1902          161       64      22         56
+     60.1s         0    7413        219       2090          180       71      27         61
+     65.2s         0    7195        212       2291          196       76      30         66
+     70.2s         0    6973        201       2494          217       83      32         71
+     75.2s         0    6757        195       2693          225       95      35         76
+     80.3s         0    6546        195       2884          239      101      35         81
+     85.3s         0    6325        209       3069          248      111      38         86
+     90.3s         0    6109        203       3274          255      119      40         91
+     95.3s         0    5894        206       3459          274      124      43         96
+    100.3s         0    5680        212       3642          287      133      46        101
+    105.3s         0    5465        209       3839          296      141      50        106
+    110.4s         0    5246        205       4035          314      149      51        111
+    115.4s         0    5029        221       4219          326      153      52        116
+    120.4s         0    4811        204       4421          346      163      55        121
+    125.4s         0    4594        200       4625          358      166      57        126
+    130.4s         0    4383        195       4818          375      171      58        131
+    135.4s         0    4166        205       5004          390      175      60        136
+    140.4s         0    3952        209       5189          407      183      60        141
+    145.4s         0    3734        204       5384          425      193      60        146
+    150.4s         0    3517        189       5595          442      196      61        151
+    155.4s         0    3302        199       5779          457      200      63        156
+    160.4s         0    3089        209       5957          473      207      65        161
+    165.5s         0    2873        216       6144          487      214      66        166
+    170.5s         0    2659        204       6347          500      221      69        171
+    175.5s         0    2445        214       6530          513      227      71        176
+    180.5s         0    2226        209       6730          530      232      73        181
+    185.5s         0    2011        200       6932          543      240      74        186
+    190.5s         0    1797        209       7119          554      245      76        191
+    195.5s         0    1583        204       7313          566      256      78        196
+    200.5s         0    1363        211       7499          588      261      78        201
+    205.5s         0    1147        190       7698          613      272      80        206
+    210.5s         0     930        196       7890          625      276      83        211
+    215.5s         0     711        213       8069          641      282      84        216
+    220.6s         0     499        203       8267          655      288      88        221
+    225.6s         0     283        205       8455          673      294      90        226
+    230.7s         0      59        217       8638          692      300      94        231
+    235.7s         0       0         72       8820          706      308      94        236
+    240.8s         0       0          1       8884          711      310      94        241
+    245.8s         0       0          0       8884          712      310      94        242
 
 Timing
 ------
-  Campaign accepted by the gateway  0.9 s (10000 messages)
+  Campaign accepted by the gateway  2.4 s (10000 messages)
   All campaign messages final       241.7 s
-  All messages final (total time)   247.8 s (242 OTPs sent meanwhile)
+  All messages final (total time)   249.8 s (242 OTPs sent meanwhile)
 
 Submit rate to the carrier
 --------------------------
   Gateway view (GET /v1/messages, this run's messages)
-    Submit attempts     10673
-    Messages submitted  10147
-    First submitted_at  2026-11-24T15:53:55.315241Z
-    Last submitted_at   2026-11-24T15:57:56.365797Z
-    Window              241.1 s
-    Average rate        44.3 per second
+    Submit attempts     10659
+    Messages submitted  10146
+    First submitted_at  2026-11-24T17:14:43.695293Z
+    Last submitted_at   2026-11-24T17:18:44.639829Z
+    Window              240.9 s
+    Average rate        44.2 per second
   Carrier view (GET /stats, since the reset before this run)
-    received                   10673
-    accepted                   10265
+    received                   10659
+    accepted                   10259
     rate_limited (429)         0
     max_submits_in_one_second  48 (stayed within the limit of 50)
-    timeouts                   118
-    duplicate_accepts          118
-    Average rate               44.3 per second
+    timeouts                   113
+    duplicate_accepts          110
+    Average rate               44.2 per second
 
 OTP latency, accept to SUBMITTED
 --------------------------------
   OTPs accepted                       242
-  Never reached SUBMITTED (excluded)  3
-  n                                   239
-  p50                                 224 ms
-  p95                                 451 ms
-  max                                 2570 ms
+  Never reached SUBMITTED (excluded)  2
+  n                                   240
+  p50                                 260 ms
+  p95                                 839 ms
+  max                                 2718 ms
 
 Final states (this run)
 -----------------------
   Status          shopfast  acme-bank  Total
-  DELIVERED           8904        211   9115
-  UNDELIVERED          711         19    730
-  EXPIRED              293          9    302
-  FAILED                92          3     95
+  DELIVERED           8884        223   9107
+  UNDELIVERED          712         11    723
+  EXPIRED              310          6    316
+  FAILED                94          2     96
   Total              10000        242  10242
   Accepted (202)     10000        242  10242
 
@@ -108,29 +108,29 @@ Billing check
 -------------
   shopfast
     Opening balance                     1000.000000 USD
-    Balance before this run              960.512000 USD
-    Balance now                          920.880000 USD
-    Ledger entries read                       20220
+    Balance before this run             1000.000000 USD
+    Balance now                          960.376000 USD
+    Ledger entries read                       10094
     Gateway's own 'consistent' flag            true
-    PASS  balance = opening balance - ledger sum           (920.880000 = 1000.000000 - 79.120000)
+    PASS  balance = opening balance - ledger sum           (960.376000 = 1000.000000 - 39.624000)
     PASS  no message charged twice                         (message ids with more than one CHARGE: 0)
     PASS  no message refunded twice                        (message ids with more than one REFUND: 0)
     PASS  run: each message charged once, at its cost      (0 of 10000 differ)
-    PASS  run: each FAILED message refunded once, in full  (0 of 92 differ)
+    PASS  run: each FAILED message refunded once, in full  (0 of 94 differ)
     PASS  run: no refund on a message that is not FAILED   (0 found)
-    PASS  balance never negative                           (lowest seen 920.512000)
+    PASS  balance never negative                           (lowest seen 960.004000)
   acme-bank
     Opening balance                      250.000000 USD
-    Balance before this run              244.960000 USD
-    Balance now                          239.941000 USD
-    Ledger entries read                         489
+    Balance before this run              250.000000 USD
+    Balance now                          244.960000 USD
+    Ledger entries read                         244
     Gateway's own 'consistent' flag            true
-    PASS  balance = opening balance - ledger sum           (239.941000 = 250.000000 - 10.059000)
+    PASS  balance = opening balance - ledger sum           (244.960000 = 250.000000 - 5.040000)
     PASS  no message charged twice                         (message ids with more than one CHARGE: 0)
     PASS  no message refunded twice                        (message ids with more than one REFUND: 0)
     PASS  run: each message charged once, at its cost      (0 of 242 differ)
-    PASS  run: each FAILED message refunded once, in full  (0 of 3 differ)
+    PASS  run: each FAILED message refunded once, in full  (0 of 2 differ)
     PASS  run: no refund on a message that is not FAILED   (0 found)
-    PASS  balance never negative                           (lowest seen 239.941000)
+    PASS  balance never negative                           (lowest seen 244.960000)
 
 Result: PASS
