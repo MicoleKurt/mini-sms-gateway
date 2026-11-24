@@ -39,10 +39,24 @@ MAX_URL_LENGTH = 2048
 
 
 def is_valid_callback_url(url: str) -> bool:
-    if len(url) > MAX_URL_LENGTH:
+    """Accept only what the delivery client can request.
+
+    urlsplit alone is too lenient: it drops a tab or a newline before
+    parsing, so such a URL passed here and then failed in httpx on every
+    delivery. Both parsers have to agree.
+    """
+    if len(url) > MAX_URL_LENGTH or not url.isascii():
         return False
-    parts = urlsplit(url)
-    return parts.scheme in ("http", "https") and bool(parts.hostname)
+    if any(c.isspace() or not c.isprintable() for c in url):
+        return False
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+        _ = parts.port  # raises ValueError for a port that is not a number in range
+        httpx.URL(url)
+    except (ValueError, httpx.InvalidURL):
+        return False
+    return parts.scheme in ("http", "https") and bool(host)
 
 
 def webhook_signature(secret: str, timestamp: int, body: bytes) -> str:
@@ -200,7 +214,9 @@ class WebhookWorker:
             http_status = response.status_code
             if not 200 <= http_status < 300:
                 error = f"HTTP {http_status}"
-        except httpx.HTTPError as exc:
+        except Exception as exc:
+            # Any failure to send is a failed attempt, recorded and backed off
+            # like a 500. httpx.InvalidURL, for one, is not an HTTPError.
             error = f"{type(exc).__name__}: {exc}"[:500]
 
         if error is None:

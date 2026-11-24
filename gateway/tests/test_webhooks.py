@@ -230,4 +230,88 @@ async def test_callback_url_must_be_http(client: httpx.AsyncClient, acme: dict) 
         assert response.status_code == 422, bad
 
     assert (await client.put("/v1/webhook", json={"callback_url": None}, headers=acme)).status_code == 200
-    assert (await client.get("/v1/webhook", headers=acme)).json() == {"callback_url": None}
+    assert (await client.get("/v1/webhook", headers=acme)).json()["callback_url"] is None
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://example.com/hook\n",  # urlsplit drops the newline, httpx refuses it
+        "http://example.com/a\tb",
+        "http://example.com/\u0001",
+        "http://[v1.x]/",
+        "http://[::1",  # urlsplit raises
+        "https://acme.example:8O80/hook",  # the port is not a number
+        "http://example.com/\u0000",  # PostgreSQL text cannot hold NUL
+        "http://example.com/\ud800",  # cannot be encoded
+        "http://exämple.com/hook",
+    ],
+)
+async def test_a_callback_url_the_client_cannot_request_is_a_422(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, bad: str
+) -> None:
+    # json.dumps escapes the lone surrogate, which the client's own encoder would refuse.
+    body = json.dumps({"callback_url": bad}).encode()
+    response = await client.put(
+        "/v1/webhook", content=body, headers={**acme, "Content-Type": "application/json"}
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["details"][0]["field"] == "callback_url"
+    assert await pool.fetchval("SELECT callback_url FROM tenants WHERE id = $1", ACME_ID) is None
+
+
+async def test_a_stored_url_that_httpx_refuses_ends_dead_with_the_error_recorded(
+    client: httpx.AsyncClient,
+    pool: asyncpg.Pool,
+    acme: dict,
+    carrier: FakeCarrier,
+    make_dispatcher,
+    endpoint: FakeTenantEndpoint,
+    webhook_worker,
+) -> None:
+    """A row written before the URL check was tightened still holds such a URL."""
+    await pool.execute("UPDATE tenants SET callback_url = $2 WHERE id = $1", ACME_ID, "http://a.example/h\n")
+    await _delivered_message(client, pool, acme, carrier, make_dispatcher, "c-1")
+    worker = webhook_worker(webhook_max_attempts=3)
+
+    for _ in range(5):
+        await worker.run_once()
+
+    (delivery,) = await _deliveries(pool)
+    assert (delivery["status"], delivery["attempts"]) == ("DEAD", 3)
+    assert delivery["last_error"].startswith("InvalidURL")
+    assert endpoint.calls == []
+
+
+async def test_a_tenant_can_read_its_signing_secret(client: httpx.AsyncClient, acme: dict) -> None:
+    assert (await client.get("/v1/webhook", headers=acme)).json() == {
+        "callback_url": None,
+        "signing_secret": "whsec_acme_dev_secret",
+    }
+    put = await client.put("/v1/webhook", json={"callback_url": "https://acme.example/h"}, headers=acme)
+    assert put.json() == {"callback_url": "https://acme.example/h", "signing_secret": "whsec_acme_dev_secret"}
+
+
+async def test_a_tenant_without_a_secret_gets_one_and_can_verify_its_callbacks(
+    client: httpx.AsyncClient,
+    pool: asyncpg.Pool,
+    acme: dict,
+    carrier: FakeCarrier,
+    make_dispatcher,
+    endpoint: FakeTenantEndpoint,
+    webhook_worker,
+) -> None:
+    await pool.execute("UPDATE tenants SET webhook_secret = NULL WHERE id = $1", ACME_ID)
+
+    put = await client.put("/v1/webhook", json={"callback_url": "https://acme.example/h"}, headers=acme)
+    secret = put.json()["signing_secret"]
+    again = await client.put("/v1/webhook", json={"callback_url": "https://acme.example/h2"}, headers=acme)
+    await _delivered_message(client, pool, acme, carrier, make_dispatcher, "c-1")
+    await webhook_worker().run_once()
+
+    assert secret.startswith("whsec_") and len(secret) > 40
+    assert again.json()["signing_secret"] == secret  # generated once, not on every PUT
+    (call,) = endpoint.calls
+    expected = webhook_signature(secret, int(call.headers["X-Webhook-Timestamp"]), call.content)
+    assert call.headers["X-Signature"] == expected
