@@ -310,12 +310,23 @@ Next.js 16 (App Router), React 19, TypeScript, Tailwind 4, TanStack Query. The
 browser never holds the admin token: the Next.js server proxies `/api/gateway/*`
 to the gateway and passes the Server-Sent Events stream through.
 
+The first version worked but looked like every default dashboard: cards inside
+cards, tinted pills, five equal tiles. I mocked up three art directions, had
+them judged from screenshots, and rebuilt the UI in the one that won. It reads
+like a printed statement: a paper ground, hairline rules instead of boxes, IBM
+Plex Sans for words and Plex Mono for every figure, and one sentence at the top
+of each screen that says what is going on. Colour is a small set of inks and
+each one means something: viridian for delivered, ultramarine for submitted,
+ochre for queued, plum for the carrier's failures, vermilion for ours and for
+anything that needs a person. A script checks every text colour for contrast in
+both themes (`npm run check:contrast`).
+
 | | |
 |---|---|
 | ![Messages](docs/screenshots/messages.png) | ![Message detail](docs/screenshots/detail.png) |
-| Filters live in the URL. Rows update in place as statuses change. | The full history: status events, submit attempts, DLRs, ledger, webhook. |
+| Filters live in the URL. Rows update in place; failures are the rows in colour. | One sentence for the outcome, where the time went on a seconds axis, then the full history: status events, attempts, receipt, ledger, webhook. |
 | ![Send test message](docs/screenshots/send.png) | ![Overview, dark](docs/screenshots/overview-dark.png) |
-| Encoding, segments and price as you type, with the characters that forced UCS-2. | Per-tenant balance and counts, the pipeline, submits per second against the carrier limit. |
+| Encoding, segments and price on every keystroke. The character that forced UCS-2 is boxed in the text and named, with what the message would cost without it. | The same overview in the dark theme, during a campaign. |
 
 ## Layout
 
