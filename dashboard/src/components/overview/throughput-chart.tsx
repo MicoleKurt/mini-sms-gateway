@@ -1,195 +1,294 @@
 "use client";
 
-import { Activity } from "lucide-react";
-import type { UseQueryResult } from "@tanstack/react-query";
+import type { ThroughputPoint } from "@/lib/api/schemas";
+import { cn } from "@/lib/cn";
+import { formatCount } from "@/lib/format";
+import { formatRate, formatSetting } from "./overview-format";
+import styles from "./overview.module.css";
 import {
-  Area,
-  CartesianGrid,
-  ComposedChart,
-  Line,
-  ReferenceLine,
-  Tooltip,
-  XAxis,
-  YAxis,
-  type TooltipContentProps,
-} from "recharts";
-import type { Overview, ThroughputPoint } from "@/lib/api/schemas";
-import { formatClock, formatCount, localZoneLabel } from "@/lib/format";
-import { Card, CardHeader } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState } from "@/components/ui/states";
+  WINDOW_SECONDS,
+  linearScale,
+  spreadLabels,
+  timeTicks,
+  placeInWindow,
+  type ThroughputSummary,
+} from "./throughput";
+import { useElementWidth } from "./use-element-width";
 
-const PLOT_HEIGHT = "h-64";
-const SUBMITTED_COLOUR = "var(--status-submitted)";
-const FINALIZED_COLOUR = "var(--ink)";
-const LIMIT_COLOUR = "var(--danger)";
-const AXIS_TICK = { fill: "var(--ink-faint)", fontSize: 11 };
+const HEIGHT = 244;
+/** Room for the y values on the left and the line-end labels on the right. */
+const LEFT = 34;
+const RIGHT = 136;
+/** Below this width the line-end labels move above the plot, which gets the full width. */
+const NARROW = 520;
+const SUBMITS = { top: 10, bottom: 160 };
+const RECEIPTS = { top: 188, bottom: 222 };
+const TICK_LABEL_Y = 238;
+/** Room from a full time label ("17:47:40") to the next one, with space between. */
+const TICK_LABEL_WIDTH = 76;
+/** Line-end labels are 12 px and axis values 11 px; this keeps two from touching. */
+const LABEL_GAP = 13;
+/** A label moved further than this from its line gets a leader back to it. */
+const LEADER_AFTER = 2;
 
-function LegendKey({ swatch, label, value }: { swatch: string; label: string; value: string }) {
+interface ChartProps {
+  points: readonly ThroughputPoint[];
+  limit: number;
+  target: number;
+  summary: ThroughputSummary;
+}
+
+/** One horizontal step per second, joined by verticals; a missing second breaks the line. */
+function stepPath(
+  points: readonly ThroughputPoint[],
+  slotX: (slot: number) => number,
+  slotWidth: number,
+  y: (value: number) => number,
+): string {
+  let path = "";
+  let previousSlot = Number.NaN;
+  for (const { point, slot } of placeInWindow(points)) {
+    const left = slotX(slot);
+    const py = y(point.submitted).toFixed(1);
+    path += slot === previousSlot + 1 ? `V${py}` : `M${left.toFixed(1)} ${py}`;
+    path += `H${(left + slotWidth).toFixed(1)}`;
+    previousSlot = slot;
+  }
+  return path;
+}
+
+/** A label at the end of a line, moved off its line only as far as it must. */
+function LineLabel({
+  x,
+  lineY,
+  labelY,
+  className,
+  children,
+}: {
+  x: number;
+  lineY: number;
+  labelY: number;
+  className?: string;
+  children: string;
+}) {
   return (
-    <li className="flex items-center gap-1.5 text-xs text-ink-muted">
-      <span aria-hidden className={swatch} />
-      {label}
-      <span className="font-mono font-medium text-ink">{value}</span>
-    </li>
+    <>
+      {Math.abs(labelY - lineY) > LEADER_AFTER ? (
+        <path
+          d={`M${x - 11} ${lineY.toFixed(1)}L${x - 3} ${labelY.toFixed(1)}`}
+          stroke="var(--chart-axis)"
+          strokeWidth="1"
+          fill="none"
+        />
+      ) : null}
+      <text x={x} y={labelY + 4} className={className}>
+        {children}
+      </text>
+    </>
   );
 }
 
-function Legend({ latest, limit }: { latest: ThroughputPoint | undefined; limit: number }) {
-  return (
-    <ul className="flex flex-wrap gap-x-4 gap-y-1">
-      <LegendKey
-        swatch="h-2.5 w-3 rounded-xs border-t-2 border-(--status-submitted) bg-(--status-submitted)/15"
-        label="Submitted"
-        value={`${formatCount(latest?.submitted ?? 0)}/s`}
-      />
-      <LegendKey
-        swatch="w-3 border-t-2 border-ink"
-        label="Finalized"
-        value={`${formatCount(latest?.finalized ?? 0)}/s`}
-      />
-      <LegendKey
-        swatch="w-3 border-t-2 border-dashed border-danger"
-        label="Carrier limit"
-        value={`${formatCount(limit)}/s`}
-      />
-    </ul>
+function Plot({ width, points, limit, target, summary }: ChartProps & { width: number }) {
+  const narrow = width < NARROW;
+  const x0 = LEFT;
+  const x1 = Math.max(LEFT + WINDOW_SECONDS, width - (narrow ? 4 : RIGHT));
+  const slotWidth = (x1 - x0) / WINDOW_SECONDS;
+  const slotX = (slot: number) => x0 + slot * slotWidth;
+
+  // Each series has its own linear scale from zero.
+  const y = linearScale(
+    [0, Math.max(limit, summary.submitted.max) * 1.08],
+    [SUBMITS.bottom, SUBMITS.top],
   );
-}
+  const receiptsMax = Math.max(limit, summary.finalized.max);
+  const yReceipts = linearScale([0, receiptsMax], [RECEIPTS.bottom, RECEIPTS.top]);
 
-function PointTooltip({ active, payload }: TooltipContentProps) {
-  const point = payload[0]?.payload as ThroughputPoint | undefined;
-  if (!active || !point) return null;
-  return (
-    <div className="rounded-md border border-line bg-surface px-2.5 py-2 text-xs shadow-md">
-      <p className="font-mono text-ink-muted">{formatClock(point.t)}</p>
-      <p className="mt-1 flex justify-between gap-4 text-ink-muted">
-        Submitted{" "}
-        <span className="font-mono font-medium text-ink">{formatCount(point.submitted)}/s</span>
-      </p>
-      <p className="flex justify-between gap-4 text-ink-muted">
-        Finalized{" "}
-        <span className="font-mono font-medium text-ink">{formatCount(point.finalized)}/s</span>
-      </p>
-    </div>
+  const showTarget = target > 0 && target < limit;
+  const lineEnds = showTarget
+    ? [y(limit), y(target), y(summary.submitted.last)]
+    : [y(limit), y(summary.submitted.last)];
+  const placed = spreadLabels(lineEnds, LABEL_GAP, SUBMITS.top, SUBMITS.bottom);
+  const limitLabelY = placed[0] ?? 0;
+  const targetLabelY = showTarget ? (placed[1] ?? 0) : 0;
+  const nowLabelY = placed.at(-1) ?? 0;
+  // The axis names the limit, the target and zero. Values that would touch move apart.
+  const [limitTickY = 0, targetTickY = 0] = spreadLabels(
+    showTarget ? [y(limit), y(target)] : [y(limit)],
+    LABEL_GAP - 1,
+    SUBMITS.top,
+    SUBMITS.bottom - LABEL_GAP,
   );
-}
+  const labelX = x1 + 14;
+  const barWidth = Math.max(1, slotWidth - 2.5);
 
-function Plot({ points, limit }: { points: ThroughputPoint[]; limit: number }) {
-  const latest = points.at(-1);
-  const summary =
-    `Submits and final states per second for the last ${points.length} seconds. ` +
-    `Latest: ${latest?.submitted ?? 0} submitted and ${latest?.finalized ?? 0} finalized per second. ` +
-    `The carrier limit is ${limit} per second.`;
+  const summaryText =
+    `Submits per second over the last ${summary.seconds} seconds: mean ${formatRate(summary.submitted.mean)}, ` +
+    `last second ${formatCount(summary.submitted.last)}, against the carrier limit of ${formatSetting(limit)}` +
+    (showTarget ? ` and the target of ${formatSetting(target)}` : "") +
+    `. Receipts per second: mean ${formatRate(summary.finalized.mean)}.`;
 
   return (
-    <div className={`flex flex-col ${PLOT_HEIGHT}`}>
-      <figure className="min-h-0 flex-1" role="img" aria-label={summary}>
-        <ComposedChart
-          responsive
-          data={points}
-          margin={{ top: 8, right: 8, bottom: 0, left: -16 }}
-          style={{ width: "100%", height: "100%" }}
-          accessibilityLayer={false}
+    <svg
+      width={width}
+      height={HEIGHT}
+      viewBox={`0 0 ${width} ${HEIGHT}`}
+      role="img"
+      aria-label={summaryText}
+      className={styles.chart}
+    >
+      {/* Submits: headroom band, zero line, target, limit, then the series. */}
+      {showTarget ? (
+        <rect
+          x={x0}
+          y={y(limit)}
+          width={x1 - x0}
+          height={y(target) - y(limit)}
+          fill="var(--chart-headroom)"
+        />
+      ) : null}
+      <path d={`M${x0} ${SUBMITS.bottom + 0.5}H${x1}`} stroke="var(--chart-axis)" strokeWidth="1" />
+      {showTarget ? (
+        <path
+          d={`M${x0} ${Math.round(y(target)) + 0.5}H${x1}`}
+          stroke="var(--chart-target)"
+          strokeWidth="1"
+          strokeDasharray="2 3"
+        />
+      ) : null}
+      <path
+        d={`M${x0} ${Math.round(y(limit))}H${x1}`}
+        stroke="var(--chart-limit)"
+        strokeWidth="2"
+      />
+      <path
+        d={stepPath(points, slotX, slotWidth, y)}
+        fill="none"
+        stroke="var(--chart-submitted)"
+        strokeWidth="1.5"
+        strokeLinejoin="miter"
+      />
+
+      <text
+        x={x0 - 8}
+        y={limitTickY + 4}
+        textAnchor="end"
+        className={cn(styles.axis, styles.axisStrong)}
+      >
+        {formatSetting(limit)}
+      </text>
+      {showTarget ? (
+        <text x={x0 - 8} y={targetTickY + 4} textAnchor="end" className={styles.axis}>
+          {formatSetting(target)}
+        </text>
+      ) : null}
+      <text x={x0 - 8} y={SUBMITS.bottom + 4} textAnchor="end" className={styles.axis}>
+        0
+      </text>
+
+      {narrow ? null : (
+        <>
+          <LineLabel x={labelX} lineY={y(limit)} labelY={limitLabelY} className={styles.lineLabel}>
+            {`Carrier limit ${formatSetting(limit)}`}
+          </LineLabel>
+          {showTarget ? (
+            <LineLabel
+              x={labelX}
+              lineY={y(target)}
+              labelY={targetLabelY}
+              className={cn(styles.lineLabel, styles.lineLabelQuiet)}
+            >
+              {`Target ${formatSetting(target)}`}
+            </LineLabel>
+          ) : null}
+          <LineLabel
+            x={labelX}
+            lineY={y(summary.submitted.last)}
+            labelY={nowLabelY}
+            className={cn(styles.lineLabel, styles.lineLabelSubmitted)}
+          >
+            {`Submitted ${formatCount(summary.submitted.last)} now`}
+          </LineLabel>
+        </>
+      )}
+
+      {/* Receipts: a strip of bars with its own zero line and scale. */}
+      <path d={`M${x0} ${RECEIPTS.top + 0.5}H${x1}`} stroke="var(--chart-grid)" strokeWidth="1" />
+      {placeInWindow(points).map(({ point, slot }) =>
+        point.finalized > 0 ? (
+          <rect
+            key={point.t}
+            x={slotX(slot) + (slotWidth - barWidth) / 2}
+            y={yReceipts(point.finalized)}
+            width={barWidth}
+            height={RECEIPTS.bottom - yReceipts(point.finalized)}
+            fill="var(--chart-receipts)"
+          />
+        ) : null,
+      )}
+      <path
+        d={`M${x0} ${RECEIPTS.bottom + 0.5}H${x1}`}
+        stroke="var(--chart-axis)"
+        strokeWidth="1"
+      />
+      {/* The bars stand on their own zero line, so only the top of their scale is named. */}
+      <text x={x0 - 8} y={RECEIPTS.top + 8} textAnchor="end" className={styles.axis}>
+        {`${formatSetting(receiptsMax)}/s`}
+      </text>
+      {narrow ? null : (
+        <text
+          x={labelX}
+          y={(RECEIPTS.top + RECEIPTS.bottom) / 2 + 4}
+          className={cn(styles.lineLabel, styles.lineLabelReceipts)}
         >
-          <CartesianGrid vertical={false} stroke="var(--line)" />
-          <XAxis
-            dataKey="t"
-            tickFormatter={formatClock}
-            tick={AXIS_TICK}
-            tickLine={false}
-            axisLine={{ stroke: "var(--line-strong)" }}
-            minTickGap={56}
-          />
-          <YAxis
-            allowDecimals={false}
-            tick={AXIS_TICK}
-            tickLine={false}
-            axisLine={false}
-            width={48}
-          />
-          <Tooltip
-            content={PointTooltip}
-            cursor={{ stroke: "var(--line-strong)" }}
-            isAnimationActive={false}
-          />
-          <Area
-            type="monotone"
-            dataKey="submitted"
-            stroke={SUBMITTED_COLOUR}
-            strokeWidth={2}
-            fill={SUBMITTED_COLOUR}
-            fillOpacity={0.12}
-            dot={false}
-            activeDot={{ r: 4, stroke: "var(--surface)", strokeWidth: 2 }}
-            // The series moves one step every second. Animating each step would never settle.
-            isAnimationActive={false}
-          />
-          <Line
-            type="monotone"
-            dataKey="finalized"
-            stroke={FINALIZED_COLOUR}
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4, stroke: "var(--surface)", strokeWidth: 2 }}
-            isAnimationActive={false}
-          />
-          <ReferenceLine
-            y={limit}
-            stroke={LIMIT_COLOUR}
-            strokeDasharray="6 4"
-            ifOverflow="extendDomain"
-          />
-        </ComposedChart>
-      </figure>
-      {/* Rendered with the data, in the browser only: the server does not know the zone. */}
-      <p className="text-right text-xs text-ink-faint">Time of day, {localZoneLabel()}</p>
-    </div>
+          Finalized {formatCount(summary.finalized.last)} now
+        </text>
+      )}
+
+      {timeTicks(points, Math.ceil(TICK_LABEL_WIDTH / slotWidth)).map((tick) => {
+        const x = slotX(tick.slot) + slotWidth / 2;
+        const anchorX = tick.anchor === "start" ? x0 : tick.anchor === "end" ? x1 : x;
+        return (
+          <g key={tick.slot}>
+            <path d={`M${x.toFixed(1)} ${RECEIPTS.bottom + 1}v4`} stroke="var(--chart-axis)" />
+            <text x={anchorX} y={TICK_LABEL_Y} textAnchor={tick.anchor} className={styles.axis}>
+              {tick.label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
 /**
- * Submits per second (area) and final states per second (line) for the last
- * minute, against the carrier's rate limit. The series comes from GET
- * /internal/overview and is extended by "stats" events (see useOverview).
+ * Submits per second as a step line against the carrier limit (the
+ * strongest line) and the target, with the headroom between them as a flat
+ * band; receipts per second as their own strip of bars underneath. Every
+ * line is labelled at its end, so there is no legend.
  */
-export function ThroughputChart({ query }: { query: UseQueryResult<Overview> }) {
+export function ThroughputChart(props: ChartProps) {
+  const { ref, width } = useElementWidth<HTMLDivElement>();
+  const { limit, target, summary } = props;
   return (
-    <Card className="flex flex-col">
-      <CardHeader
-        title="Carrier throughput"
-        description="Submits and final states per second, last 60 seconds."
-        actions={
-          query.data ? (
-            <Legend
-              latest={query.data.throughput.at(-1)}
-              limit={query.data.carrier.limit_per_second}
-            />
-          ) : null
-        }
-      />
-      <div className="px-4 pt-3 pb-4">
-        {query.isPending ? (
-          <Skeleton className={PLOT_HEIGHT} />
-        ) : query.isLoadingError ? (
-          // Only without any data. After a failed refresh the last series stays up.
-          <ErrorState
-            className={PLOT_HEIGHT}
-            title="Throughput could not be loaded"
-            error={query.error}
-            onRetry={() => query.refetch()}
-          />
-        ) : query.data.throughput.length === 0 ? (
-          <EmptyState
-            className={PLOT_HEIGHT}
-            icon={<Activity aria-hidden />}
-            title="No throughput yet"
-            description="The gateway has not reported any per-second rates."
-          />
-        ) : (
-          <Plot points={query.data.throughput} limit={query.data.carrier.limit_per_second} />
-        )}
+    <div className="min-w-0">
+      {width > 0 && width < NARROW ? (
+        // On a narrow screen the line-end labels are a row above the plot.
+        <p aria-hidden className={styles.chartKey}>
+          <span>Carrier limit {formatSetting(limit)}</span>
+          {target > 0 && target < limit ? (
+            <span className={styles.keyTarget}>Target {formatSetting(target)}</span>
+          ) : null}
+          <span className={styles.keySubmitted}>
+            Submitted {formatCount(summary.submitted.last)} now
+          </span>
+          <span className={styles.keyReceipts}>
+            Finalized {formatCount(summary.finalized.last)} now
+          </span>
+        </p>
+      ) : null}
+      <div ref={ref} className={styles.chartBox}>
+        {width > 0 ? <Plot width={width} {...props} /> : null}
       </div>
-    </Card>
+    </div>
   );
 }

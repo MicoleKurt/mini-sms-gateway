@@ -1,0 +1,370 @@
+/* The Overview page. Shared pieces (sections, facts lists, tables, status
+   marks) come from src/styles; this file only lays out what is particular
+   to this page. Every value is a token from globals.css. */
+
+/* ---- Top: the sentence on the left, the key figures on the right (8 + 4). */
+
+.top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 336px;
+  column-gap: 64px;
+  align-items: start;
+}
+
+/* Sits on the first baseline of the 30 px headline beside it. */
+.snapshot {
+  margin-top: 16px;
+  line-height: 18px;
+}
+
+/* A figure inside a line of prose: Plex Sans, tabular, so the words around
+   it hold still while it changes. */
+.inlineFigure {
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--ink);
+}
+
+.notices {
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+}
+
+.notices:empty {
+  display: none;
+}
+
+.facts {
+  margin-top: 2px;
+}
+
+.trend {
+  display: inline-block;
+  width: 64px;
+  height: 14px;
+  margin-right: var(--s-3);
+  vertical-align: -2px;
+  overflow: visible;
+}
+
+.trend .trendBase {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+
+.trend polyline {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+}
+
+.trend circle {
+  fill: var(--ink);
+}
+
+/* Dead webhooks are a thing to do, not a quiet row. */
+.action {
+  margin-top: var(--s-3);
+  padding-top: var(--s-2);
+  border-top: var(--rule-hair) solid var(--rule);
+  color: var(--ink-2);
+}
+
+.actionCount {
+  margin-right: 6px;
+  font-size: var(--t-lead);
+  font-weight: var(--w-bold);
+}
+
+/* ---- Pipeline: a line of totals, the strip, a fixed label row. */
+
+.stripHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px var(--s-5);
+  margin-bottom: var(--s-3);
+  color: var(--ink-2);
+}
+
+.stripHead strong {
+  font-weight: var(--w-medium);
+  color: var(--ink);
+}
+
+/* Proportional segments in the status inks. A segment is never narrower
+   than 3 px, so a status with one message still shows. */
+.strip {
+  display: flex;
+  gap: 2px;
+  background: var(--paper);
+}
+
+.stripEmpty {
+  background: var(--strip-ground);
+}
+
+.segment {
+  flex: 1 1 0;
+  min-width: 3px;
+  background: var(--mark);
+}
+
+/* Expired: plum hatching on the strip ground. */
+.segment[data-status="EXPIRED"] {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--st-expired) 0 1.5px,
+    var(--strip-ground) 1.5px 4px
+  );
+}
+
+.pipelineStrip {
+  height: 20px;
+}
+
+.labels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 0.75fr)) repeat(4, minmax(0, 1fr));
+  column-gap: var(--s-5);
+  margin: var(--s-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.label {
+  min-width: 0;
+}
+
+.labelHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+/* The status word keeps its own width; the count follows it. */
+.labelHead > :first-child {
+  min-width: 0;
+}
+
+.labelCount {
+  font-size: var(--t-lead);
+  font-weight: var(--w-medium);
+}
+
+.labelNote {
+  margin-top: 2px;
+  font-size: var(--t-small);
+  line-height: 17px;
+  color: var(--ink-3);
+}
+
+.labelNote .share {
+  color: var(--ink-2);
+}
+
+/* ---- Tenants. */
+
+.tenantName {
+  display: inline-flex;
+  flex-direction: column;
+  max-width: 220px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tenantName > :first-child {
+  font-weight: var(--w-medium);
+}
+
+/* Under 768 px the name column is pinned, so a long name is cut to keep
+   the scrolling columns in view. The full name is in the title. */
+@media (max-width: 767px) {
+  .tenantName {
+    max-width: 120px;
+  }
+
+  .tenantName > * {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.slug {
+  font-size: var(--t-small);
+  color: var(--ink-3);
+}
+
+.outcomes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.outcomeStrip {
+  width: 200px;
+  height: 8px;
+}
+
+/* On a phone the share comes first, so it stays in view while the table scrolls. */
+@media (max-width: 767px) {
+  .outcomes {
+    flex-direction: row-reverse;
+  }
+
+  .outcomeStrip {
+    width: 96px;
+  }
+}
+
+.ledgerLine {
+  margin-top: var(--s-3);
+  color: var(--ink-2);
+}
+
+.formula {
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  color: var(--ink);
+}
+
+/* ---- Throughput: figures in a column, the chart beside them. */
+
+.throughput {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  column-gap: var(--gutter);
+}
+
+.figures > div + div {
+  margin-top: 14px;
+}
+
+.figureCaption {
+  font-size: var(--t-small);
+  line-height: 17px;
+  color: var(--ink-3);
+}
+
+.range {
+  white-space: nowrap;
+}
+
+.lastSample {
+  margin-left: var(--s-3);
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+
+.chartBox {
+  position: relative;
+  height: 244px;
+  min-width: 0;
+}
+
+.chart {
+  display: block;
+  overflow: visible;
+}
+
+.axis {
+  font: 11px var(--font-mono);
+  fill: var(--chart-axis);
+}
+
+.axisStrong {
+  fill: var(--ink);
+}
+
+.lineLabel {
+  font: var(--w-medium) 12px var(--font-sans);
+  fill: var(--ink);
+}
+
+.lineLabelQuiet {
+  font-weight: var(--w-regular);
+  fill: var(--ink-3);
+}
+
+.lineLabelSubmitted {
+  fill: var(--st-submitted-text);
+}
+
+.lineLabelReceipts {
+  font-weight: var(--w-regular);
+  fill: var(--ink-2);
+}
+
+/* The line labels as a row above the plot, on a narrow screen. Each is
+   keyed by a short line in its series' ink. */
+.chartKey {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s-4);
+  margin-bottom: var(--s-2);
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+
+.chartKey > span::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-top: 2px solid var(--chart-limit);
+}
+
+.chartKey > .keyTarget::before {
+  border-top: 1px dashed var(--chart-target);
+}
+
+.chartKey > .keySubmitted {
+  color: var(--st-submitted-text);
+}
+
+.chartKey > .keySubmitted::before {
+  border-top: 1.5px solid var(--chart-submitted);
+}
+
+.chartKey > .keyReceipts::before {
+  width: 4px;
+  height: 8px;
+  border: 0;
+  background: var(--chart-receipts);
+}
+
+@media (max-width: 767px) {
+  .top {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--s-5);
+  }
+
+  .labels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: var(--s-3);
+  }
+
+  .throughput {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--s-4);
+  }
+
+  .figures {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-3) var(--s-4);
+  }
+
+  .figures > div + div {
+    margin-top: 0;
+  }
+
+  .figures > div:first-child {
+    grid-column: 1 / -1;
+  }
+}
