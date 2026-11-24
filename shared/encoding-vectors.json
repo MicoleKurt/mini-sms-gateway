@@ -1,0 +1,226 @@
+[
+  {
+    "name": "single ascii",
+    "text": "Your code is 482913",
+    "encoding": "GSM7",
+    "units": 19,
+    "segments": 1
+  },
+  {
+    "name": "one character",
+    "text": "a",
+    "encoding": "GSM7",
+    "units": 1,
+    "segments": 1
+  },
+  {
+    "name": "gsm basic specials",
+    "text": "@\u00a3$\u00a5\u00e8\u00e9\u00f9\u00ec\u00f2\u00c7\u00d8\u00f8\u00c5\u00e5\u0394_\u03a6\u0393\u039b\u03a9\u03a0\u03a8\u03a3\u0398\u039e\u00c6\u00e6\u00df\u00c9\u00a1\u00c4\u00d6\u00d1\u00dc\u00a7\u00bf\u00e4\u00f6\u00f1\u00fc\u00e0",
+    "encoding": "GSM7",
+    "units": 41,
+    "segments": 1
+  },
+  {
+    "name": "newline and carriage return",
+    "text": "line1\nline2\r\n",
+    "encoding": "GSM7",
+    "units": 13,
+    "segments": 1
+  },
+  {
+    "name": "exactly 160 septets",
+    "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "encoding": "GSM7",
+    "units": 160,
+    "segments": 1
+  },
+  {
+    "name": "161 septets",
+    "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "encoding": "GSM7",
+    "units": 161,
+    "segments": 2
+  },
+  {
+    "name": "exactly 306 septets",
+    "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "encoding": "GSM7",
+    "units": 306,
+    "segments": 2
+  },
+  {
+    "name": "307 septets",
+    "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "encoding": "GSM7",
+    "units": 307,
+    "segments": 3
+  },
+  {
+    "name": "every extension character",
+    "text": "\f^{}\\[~]|\u20ac",
+    "encoding": "GSM7",
+    "units": 20,
+    "segments": 1
+  },
+  {
+    "name": "extension characters count double",
+    "text": "{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{",
+    "encoding": "GSM7",
+    "units": 160,
+    "segments": 1
+  },
+  {
+    "name": "81 extension characters",
+    "text": "{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{",
+    "encoding": "GSM7",
+    "units": 162,
+    "segments": 2
+  },
+  {
+    "name": "euro sign",
+    "text": "Total: 12\u20ac",
+    "encoding": "GSM7",
+    "units": 11,
+    "segments": 1
+  },
+  {
+    "name": "extension pair is not split at a segment boundary",
+    "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{aaaaaaaaaa",
+    "encoding": "GSM7",
+    "units": 164,
+    "segments": 2
+  },
+  {
+    "name": "extension pair fits exactly at a segment boundary",
+    "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{aaaaaaaaaa",
+    "encoding": "GSM7",
+    "units": 163,
+    "segments": 2
+  },
+  {
+    "name": "extension pair at a boundary costs a third segment",
+    "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "encoding": "GSM7",
+    "units": 306,
+    "segments": 3
+  },
+  {
+    "name": "bangla",
+    "text": "\u0986\u09aa\u09a8\u09be\u09b0 \u0995\u09cb\u09a1 482913",
+    "encoding": "UCS2",
+    "units": 16,
+    "segments": 1
+  },
+  {
+    "name": "surrogate pair at a boundary costs a third segment",
+    "text": "\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\ud83d\ude00\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995",
+    "encoding": "UCS2",
+    "units": 134,
+    "segments": 3
+  },
+  {
+    "name": "single emoji",
+    "text": "\ud83d\ude00",
+    "encoding": "UCS2",
+    "units": 2,
+    "segments": 1
+  },
+  {
+    "name": "ascii plus emoji",
+    "text": "Sale today \ud83c\udf89",
+    "encoding": "UCS2",
+    "units": 13,
+    "segments": 1
+  },
+  {
+    "name": "exactly 70 ucs2 units",
+    "text": "\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995",
+    "encoding": "UCS2",
+    "units": 70,
+    "segments": 1
+  },
+  {
+    "name": "71 ucs2 units",
+    "text": "\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995",
+    "encoding": "UCS2",
+    "units": 71,
+    "segments": 2
+  },
+  {
+    "name": "exactly 134 ucs2 units",
+    "text": "\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995",
+    "encoding": "UCS2",
+    "units": 134,
+    "segments": 2
+  },
+  {
+    "name": "135 ucs2 units",
+    "text": "\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995",
+    "encoding": "UCS2",
+    "units": 135,
+    "segments": 3
+  },
+  {
+    "name": "35 emoji",
+    "text": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+    "encoding": "UCS2",
+    "units": 70,
+    "segments": 1
+  },
+  {
+    "name": "36 emoji",
+    "text": "\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00\ud83d\ude00",
+    "encoding": "UCS2",
+    "units": 72,
+    "segments": 2
+  },
+  {
+    "name": "surrogate pair is not split at a segment boundary",
+    "text": "\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\ud83d\ude00\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995\u0995",
+    "encoding": "UCS2",
+    "units": 78,
+    "segments": 2
+  },
+  {
+    "name": "backtick is not gsm",
+    "text": "`quoted`",
+    "encoding": "UCS2",
+    "units": 8,
+    "segments": 1
+  },
+  {
+    "name": "tab is not gsm",
+    "text": "a\tb",
+    "encoding": "UCS2",
+    "units": 3,
+    "segments": 1
+  },
+  {
+    "name": "curly quote is not gsm",
+    "text": "It\u2019s here",
+    "encoding": "UCS2",
+    "units": 9,
+    "segments": 1
+  },
+  {
+    "name": "cyrillic",
+    "text": "\u041f\u0440\u0438\u0432\u0435\u0442",
+    "encoding": "UCS2",
+    "units": 6,
+    "segments": 1
+  },
+  {
+    "name": "arabic",
+    "text": "\u0645\u0631\u062d\u0628\u0627 \u0628\u0643",
+    "encoding": "UCS2",
+    "units": 8,
+    "segments": 1
+  },
+  {
+    "name": "capital c cedilla is gsm, small is not",
+    "text": "\u00c7a va \u00e7",
+    "encoding": "UCS2",
+    "units": 7,
+    "segments": 1
+  }
+]
