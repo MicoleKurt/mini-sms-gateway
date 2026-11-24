@@ -1,0 +1,136 @@
+SMS gateway load test
+=====================
+  Run id         b5a23c9e
+  Started (UTC)  2026-11-24T15:53:54Z
+  Gateway        http://127.0.0.1:8000
+  Carrier        http://127.0.0.1:9000
+  Campaign       10000 ShopFast messages, 1000 per batch
+  OTP            one Acme Bank message every 1 s
+  Deadline       900 s
+
+Progress (campaign status counts for this run)
+----------------------------------------------
+   elapsed  ACCEPTED  QUEUED  SUBMITTED  DELIVERED  UNDELIVERED  EXPIRED  FAILED  OTPs sent
+      5.0s         0    9801        154         37            5        0       3          5
+     10.0s         0    9582        201        192           18        2       5         11
+     15.0s         0    9364        199        391           32        7       7         16
+     20.1s         0    9140        217        570           53       12       8         21
+     25.1s         0    8932        214        762           66       17       9         26
+     30.1s         0    8713        222        947           87       22       9         31
+     35.1s         0    8494        207       1158          100       30      11         36
+     40.1s         0    8276        215       1344          116       37      12         41
+     45.2s         0    8061        207       1540          133       43      16         46
+     50.2s         0    7852        184       1743          150       53      18         51
+     55.2s         0    7634        207       1924          157       58      20         56
+     60.2s         0    7416        205       2119          176       63      21         61
+     65.2s         0    7199        190       2332          186       71      22         66
+     70.2s         0    6981        197       2516          206       76      24         71
+     75.3s         0    6764        210       2700          222       80      24         76
+     80.3s         0    6553        217       2874          240       89      27         81
+     85.3s         0    6337        194       3086          256       99      28         86
+     90.3s         0    6124        211       3263          268      105      29         91
+     95.3s         0    5910        209       3463          278      110      30         96
+    100.4s         0    5691        223       3648          292      115      31        101
+    105.4s         0    5477        203       3859          304      126      31        106
+    110.4s         0    5255        206       4054          317      131      37        111
+    115.4s         0    5039        207       4241          335      139      39        116
+    120.4s         0    4817        210       4441          346      144      42        121
+    125.5s         0    4605        219       4622          361      150      43        126
+    130.5s         0    4387        209       4825          378      157      44        131
+    135.5s         0    4172        214       5011          394      162      47        136
+    140.5s         0    3959        204       5217          403      168      49        141
+    145.5s         0    3741        219       5395          415      178      52        146
+    150.5s         0    3521        211       5595          434      185      54        151
+    155.6s         0    3302        214       5786          453      189      56        156
+    160.6s         0    3086        208       5978          470      200      58        161
+    165.6s         0    2869        205       6173          482      210      61        166
+    170.6s         0    2652        212       6353          507      214      62        171
+    175.6s         0    2433        210       6554          518      221      64        176
+    180.6s         0    2218        206       6756          528      228      64        181
+    185.6s         0    2004        196       6962          540      233      65        186
+    190.7s         0    1785        191       7157          559      241      67        191
+    195.7s         0    1567        207       7333          578      245      70        196
+    200.7s         0    1352        209       7519          599      250      71        201
+    205.7s         0    1142        198       7712          614      260      74        206
+    210.7s         0     921        213       7892          630      266      78        211
+    215.8s         0     705        204       8087          649      273      82        216
+    220.8s         0     492        193       8291          662      280      82        221
+    225.8s         0     275        202       8475          677      286      85        226
+    230.8s         0      56        203       8668          694      288      91        231
+    235.8s         0       0         92       8821          703      292      92        236
+    240.8s         0       0          1       8903          711      293      92        241
+    245.8s         0       0          0       8904          711      293      92        242
+
+Timing
+------
+  Campaign accepted by the gateway  0.9 s (10000 messages)
+  All campaign messages final       241.7 s
+  All messages final (total time)   247.8 s (242 OTPs sent meanwhile)
+
+Submit rate to the carrier
+--------------------------
+  Gateway view (GET /v1/messages, this run's messages)
+    Submit attempts     10673
+    Messages submitted  10147
+    First submitted_at  2026-11-24T15:53:55.315241Z
+    Last submitted_at   2026-11-24T15:57:56.365797Z
+    Window              241.1 s
+    Average rate        44.3 per second
+  Carrier view (GET /stats, since the reset before this run)
+    received                   10673
+    accepted                   10265
+    rate_limited (429)         0
+    max_submits_in_one_second  48 (stayed within the limit of 50)
+    timeouts                   118
+    duplicate_accepts          118
+    Average rate               44.3 per second
+
+OTP latency, accept to SUBMITTED
+--------------------------------
+  OTPs accepted                       242
+  Never reached SUBMITTED (excluded)  3
+  n                                   239
+  p50                                 224 ms
+  p95                                 451 ms
+  max                                 2570 ms
+
+Final states (this run)
+-----------------------
+  Status          shopfast  acme-bank  Total
+  DELIVERED           8904        211   9115
+  UNDELIVERED          711         19    730
+  EXPIRED              293          9    302
+  FAILED                92          3     95
+  Total              10000        242  10242
+  Accepted (202)     10000        242  10242
+
+Billing check
+-------------
+  shopfast
+    Opening balance                     1000.000000 USD
+    Balance before this run              960.512000 USD
+    Balance now                          920.880000 USD
+    Ledger entries read                       20220
+    Gateway's own 'consistent' flag            true
+    PASS  balance = opening balance - ledger sum           (920.880000 = 1000.000000 - 79.120000)
+    PASS  no message charged twice                         (message ids with more than one CHARGE: 0)
+    PASS  no message refunded twice                        (message ids with more than one REFUND: 0)
+    PASS  run: each message charged once, at its cost      (0 of 10000 differ)
+    PASS  run: each FAILED message refunded once, in full  (0 of 92 differ)
+    PASS  run: no refund on a message that is not FAILED   (0 found)
+    PASS  balance never negative                           (lowest seen 920.512000)
+  acme-bank
+    Opening balance                      250.000000 USD
+    Balance before this run              244.960000 USD
+    Balance now                          239.941000 USD
+    Ledger entries read                         489
+    Gateway's own 'consistent' flag            true
+    PASS  balance = opening balance - ledger sum           (239.941000 = 250.000000 - 10.059000)
+    PASS  no message charged twice                         (message ids with more than one CHARGE: 0)
+    PASS  no message refunded twice                        (message ids with more than one REFUND: 0)
+    PASS  run: each message charged once, at its cost      (0 of 242 differ)
+    PASS  run: each FAILED message refunded once, in full  (0 of 3 differ)
+    PASS  run: no refund on a message that is not FAILED   (0 found)
+    PASS  balance never negative                           (lowest seen 239.941000)
+
+Result: PASS
