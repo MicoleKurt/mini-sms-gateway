@@ -1,0 +1,188 @@
+# One command starts everything with seed data:
+#
+#   docker compose up --build
+#
+#   Dashboard      http://localhost:3000
+#   Gateway API    http://localhost:8000      (OpenAPI docs at /docs)
+#   Mock carrier   http://localhost:9000/stats
+#   Webhook sink   http://localhost:9100/stats
+#
+# Tools (not started by default):
+#
+#   docker compose run --rm loadtest      # 10,000 ShopFast messages + 1 OTP per second
+#   docker compose run --rm tests         # the gateway test suite
+
+name: sms-gateway
+
+x-gateway: &gateway
+  image: sms-gateway/gateway
+  build:
+    context: ./gateway
+    target: runtime
+  restart: unless-stopped
+
+x-gateway-env: &gateway-env
+  DATABASE_URL: postgresql://smsgw:smsgw@postgres:5432/smsgw
+  REDIS_URL: redis://valkey:6379/0
+  CARRIER_URL: http://mock-carrier:9000
+  DLR_SECRET: ${DLR_SECRET:-dev-dlr-secret}
+  ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: smsgw
+      POSTGRES_PASSWORD: smsgw
+      POSTGRES_DB: smsgw
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/10-test-database.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smsgw -d smsgw"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # Holds only the rate limiter's single key and the live-event channel.
+  # Nothing here needs to survive a restart, so persistence is off.
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # Runs the migrations and the seed, then exits. Everything else waits for it.
+  migrate:
+    <<: *gateway
+    command: ["python", "-m", "gateway.migrate", "--seed"]
+    environment:
+      <<: *gateway-env
+      SEED_ACME_CALLBACK_URL: http://webhook-sink:9100/hooks/acme-bank
+      SEED_SHOPFAST_CALLBACK_URL: http://webhook-sink:9100/hooks/shopfast
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  gateway:
+    <<: *gateway
+    command: ["uvicorn", "gateway.api.app:app_factory", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--timeout-keep-alive", "75"]
+    environment: *gateway-env
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/readyz', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Two dispatcher processes on purpose: the carrier limit and the "never the
+  # same message twice" rule have to hold across workers, not inside one.
+  dispatcher:
+    <<: *gateway
+    command: ["python", "-m", "gateway.runner", "dispatcher"]
+    environment: *gateway-env
+    deploy:
+      replicas: 2
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+
+  # Tenant callbacks run in their own process, so a slow tenant endpoint
+  # cannot take a connection or a CPU cycle away from sending.
+  webhooks:
+    <<: *gateway
+    command: ["python", "-m", "gateway.runner", "webhooks"]
+    environment: *gateway-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  mock-carrier:
+    image: sms-gateway/mock-carrier
+    build: ./mock-carrier
+    command: ["uvicorn", "mock_carrier.carrier:app", "--host", "0.0.0.0", "--port", "9000"]
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      DLR_SECRET: ${DLR_SECRET:-dev-dlr-secret}
+      # Set to "true" to see the timeout risk disappear (see DESIGN.md).
+      IDEMPOTENT_SUBMIT: ${IDEMPOTENT_SUBMIT:-false}
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
+  # Stands in for the tenants' own servers. ShopFast's endpoint is slow and
+  # fails one call in ten, to show that this does not affect sending.
+  webhook-sink:
+    image: sms-gateway/mock-carrier
+    build: ./mock-carrier
+    command: ["uvicorn", "mock_carrier.sink:app", "--host", "0.0.0.0", "--port", "9100"]
+    environment:
+      SINK_FAIL_SHOPFAST: "0.1"
+      SINK_DELAY_MS_SHOPFAST: "50-400"
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+
+  dashboard:
+    image: sms-gateway/dashboard
+    build: ./dashboard
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+    ports:
+      - "3000:3000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+
+  loadtest:
+    <<: *gateway
+    profiles: ["tools"]
+    command: ["python", "/loadtest/load_test.py"]
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      CARRIER_URL: http://mock-carrier:9000
+    volumes:
+      - ./loadtest:/loadtest:ro
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: "no"
+
+  tests:
+    image: sms-gateway/gateway-tests
+    build:
+      context: ./gateway
+      target: test
+    profiles: ["tools"]
+    environment:
+      TEST_DATABASE_URL: postgresql://smsgw:smsgw@postgres:5432/smsgw_test
+      # Database 15, so the tests never touch the running system's limiter key.
+      TEST_REDIS_URL: redis://valkey:6379/15
+    volumes:
+      - ./shared:/shared:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  pgdata:

@@ -23,12 +23,13 @@ CHANNEL = "smsgw:live"
 
 
 class LivePublisher:
-    def __init__(self, redis: Any) -> None:
+    def __init__(self, redis: Any, channel: str = CHANNEL) -> None:
         self._redis = redis
+        self._channel = channel
 
     async def publish(self, event_type: str, payload: dict[str, Any]) -> None:
         try:
-            await self._redis.publish(CHANNEL, json.dumps({"type": event_type, "data": payload}))
+            await self._redis.publish(self._channel, json.dumps({"type": event_type, "data": payload}))
         except Exception:  # the stream must never break a request or a worker
             log.warning("could not publish live event %s", event_type, exc_info=True)
 
@@ -59,10 +60,12 @@ class LiveHub:
         redis: Any,
         stats_provider: Callable[[], Awaitable[dict[str, Any]]],
         *,
+        channel: str = CHANNEL,
         stats_interval: float = 1.0,
         ping_interval: float = 15.0,
     ) -> None:
         self._redis = redis
+        self._channel = channel
         self._stats_provider = stats_provider
         self._stats_interval = stats_interval
         self._ping_interval = ping_interval
@@ -112,7 +115,7 @@ class LiveHub:
         while True:
             pubsub = self._redis.pubsub()
             try:
-                await pubsub.subscribe(CHANNEL)
+                await pubsub.subscribe(self._channel)
                 async for item in pubsub.listen():
                     if item.get("type") != "message" or not self._clients:
                         continue

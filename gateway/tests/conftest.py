@@ -55,6 +55,7 @@ def make_settings(**overrides: Any) -> Settings:
         "database_url": TEST_DATABASE_URL,
         "dlr_secret": DLR_SECRET,
         "admin_token": ADMIN_TOKEN,
+        "live_channel": "smsgw:test:live",
         "seed_acme_api_key": ACME_KEY,
         "seed_shopfast_api_key": SHOPFAST_KEY,
         "seed_acme_callback_url": None,
@@ -196,7 +197,7 @@ async def make_dispatcher(
             pool=pool,
             limiter=limiter,
             carrier=carrier_client,
-            publisher=LivePublisher(redis_client),
+            publisher=LivePublisher(redis_client, settings.live_channel),
             settings=settings,
             worker_id=worker_id,
         )

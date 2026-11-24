@@ -57,7 +57,7 @@ async def run_dispatcher(settings: Settings) -> None:
         pool=pool,
         limiter=limiter,
         carrier=carrier,
-        publisher=LivePublisher(redis_client),
+        publisher=LivePublisher(redis_client, settings.live_channel),
         settings=settings,
     )
     stop = asyncio.Event()

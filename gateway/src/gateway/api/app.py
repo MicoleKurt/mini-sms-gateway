@@ -42,9 +42,11 @@ def create_app(
             settings.database_url, min_size=settings.db_pool_min, max_size=settings.db_pool_max
         )
         app.state.redis = redis_client or aioredis.from_url(settings.redis_url, decode_responses=True)
-        app.state.publisher = LivePublisher(app.state.redis)
+        app.state.publisher = LivePublisher(app.state.redis, settings.live_channel)
         app.state.prices = PriceCache(app.state.pool, settings.price_cache_seconds)
-        app.state.hub = LiveHub(app.state.redis, lambda: queries.live_stats(app.state.pool))
+        app.state.hub = LiveHub(
+            app.state.redis, lambda: queries.live_stats(app.state.pool), channel=settings.live_channel
+        )
         await app.state.hub.start()
         try:
             yield

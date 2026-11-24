@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     carrier_url: str = "http://localhost:9000"
     dlr_secret: str = "dev-dlr-secret"
     admin_token: str = "dev-admin-token"
+    #: Redis pub/sub channel for dashboard live events.
+    live_channel: str = "smsgw:live"
 
     db_pool_min: int = 2
     db_pool_max: int = 12
