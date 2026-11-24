@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     admin_token: str = "dev-admin-token"
     #: Redis pub/sub channel for dashboard live events.
     live_channel: str = "smsgw:live"
+    #: Longest wait for a Valkey connect or reply before the call fails.
+    redis_timeout_seconds: float = 1.0
 
     db_pool_min: int = 2
     db_pool_max: int = 12
@@ -44,6 +46,10 @@ class Settings(BaseSettings):
     #: comfortably longer than carrier_timeout_seconds.
     lease_seconds: float = 30.0
     worker_max_in_flight: int = 32
+    #: Claim -> token -> send loops per worker process. Each holds at most one
+    #: claimed message while it waits for a token. More lanes keep the carrier
+    #: slots filled when a claim is slow; fewer keep an OTP closer to the front.
+    worker_lanes: int = 2
     worker_idle_poll_seconds: float = 0.1
     worker_shutdown_grace_seconds: float = 10.0
 
@@ -56,6 +62,13 @@ class Settings(BaseSettings):
     #: One tenant's slow endpoint can hold at most this many of our sockets.
     webhook_per_tenant_concurrency: int = 8
     webhook_idle_poll_seconds: float = 0.25
+
+    # --- Lost DLRs (swept in the webhook process) ----------------------------
+    #: A message SUBMITTED for longer than this without a DLR becomes EXPIRED.
+    #: The carrier's validity period.
+    dlr_wait_seconds: float = 86_400.0
+    dlr_sweep_interval_seconds: float = 60.0
+    dlr_sweep_batch_size: int = 500
 
     # --- Observability -------------------------------------------------------
     log_level: str = "INFO"

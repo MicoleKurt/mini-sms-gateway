@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import time
+from datetime import timedelta
 from typing import Any
 
 import asyncpg
@@ -416,3 +417,221 @@ async def test_a_late_result_and_a_reclaim_of_the_same_message_do_not_deadlock(
         if reclaimed is not None:
             assert (reclaimed.attempt, row["attempts"]) == (2, 2)
         await pool.execute("UPDATE messages SET status = 'FAILED' WHERE id = $1::uuid", message_id)
+
+
+# --- recording a result twice ------------------------------------------------------------
+
+
+async def test_recording_an_acceptance_twice_keeps_the_carrier_id_for_the_dlr(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict
+) -> None:
+    """The first record_accepted committed but its acknowledgement was lost, so
+    the dispatcher records the same result again. The DLR must still find the message."""
+    from conftest import post_dlr
+    from gateway.carrier import Outcome, SubmitResult
+    from gateway.dispatch import record_accepted
+
+    message_id = await send(client, acme)
+    claimed = await claim_one(pool, "w-1", lease_seconds=30)
+    assert claimed is not None
+    result = SubmitResult(Outcome.ACCEPTED, 200, carrier_id="c-twice")
+
+    await record_accepted(pool, claimed, result)
+    await record_accepted(pool, claimed, result)
+
+    carrier_ids = await pool.fetch(
+        "SELECT carrier_id FROM submit_attempts WHERE message_id = $1::uuid", message_id
+    )
+    assert [r["carrier_id"] for r in carrier_ids] == ["c-twice"]
+    response = await post_dlr(client, "c-twice", "DELIVRD")
+    assert response.json() == {"result": "applied"}
+    assert (await message_row(pool, message_id))["status"] == "DELIVERED"
+
+
+async def test_an_idempotent_carrier_id_stays_on_the_attempt_that_got_it_first(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict
+) -> None:
+    """Two attempts of one message are both accepted, and a de-duplicating
+    carrier returns the same carrier_id for both."""
+    from gateway.carrier import Outcome, SubmitResult
+    from gateway.dispatch import record_accepted
+
+    message_id = await send(client, acme)
+    first = await claim_one(pool, "w-slow", lease_seconds=30)
+    await _expire_lease(pool, message_id)
+    second = await claim_one(pool, "w-retry", lease_seconds=30)
+    assert first is not None and second is not None
+    accepted = SubmitResult(Outcome.ACCEPTED, 200, carrier_id="c-same")
+
+    await record_accepted(pool, first, accepted)
+    await record_accepted(pool, second, accepted)
+
+    rows = await pool.fetch(
+        "SELECT attempt_no, carrier_id FROM submit_attempts WHERE message_id = $1::uuid ORDER BY 1",
+        message_id,
+    )
+    assert [(r["attempt_no"], r["carrier_id"]) for r in rows] == [(1, "c-same"), (2, None)]
+
+
+async def test_recording_a_timeout_twice_counts_one_ambiguous_attempt(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict
+) -> None:
+    from gateway.carrier import Outcome, SubmitResult
+    from gateway.dispatch import record_retry
+    from gateway.retry import Action, Decision
+
+    message_id = await send(client, acme)
+    claimed = await claim_one(pool, "w-1", lease_seconds=30)
+    assert claimed is not None
+    timeout = SubmitResult(Outcome.TIMEOUT, error="no answer")
+    decision = Decision(Action.RETRY, ambiguous=True)
+
+    await record_retry(pool, claimed, timeout, decision)
+    await record_retry(pool, claimed, timeout, decision)
+
+    assert (await message_row(pool, message_id))["ambiguous_attempts"] == 1
+
+
+# --- releasing a claim -------------------------------------------------------------
+
+
+async def test_a_stale_release_cannot_undo_a_newer_claim(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    """Worker A waits for a token past its lease. Worker B claims the message and
+    releases it (no token either). Then A gives up and releases too. A's release
+    must not lower the attempt counter below B's closed attempt row."""
+    from gateway.dispatch import release_claim
+
+    message_id = await send(client, acme)
+    slow = await claim_one(pool, "w-slow", lease_seconds=30)
+    await _expire_lease(pool, message_id)
+    other = await claim_one(pool, "w-other", lease_seconds=30)
+    assert slow is not None and other is not None
+
+    await release_claim(pool, other, "w-other")
+    await release_claim(pool, slow, "w-slow")
+
+    assert (await message_row(pool, message_id))["attempts"] == 1
+    assert await make_dispatcher().run_once() == 1
+    assert (await message_row(pool, message_id))["status"] == "SUBMITTED"
+    assert await _attempts(pool, message_id) == [(1, "ABANDONED"), (2, "ACCEPTED")]
+
+
+async def test_the_claim_plan_does_not_walk_a_large_backlog(pool: asyncpg.Pool) -> None:
+    """Statistics taken while a 20,000-message campaign was all QUEUED, then
+    half of it sent. The claim must still reach the first ready row through
+    messages_dispatch_idx, not walk the primary key past every sent row."""
+    from gateway.dispatch import _CLAIM
+
+    await pool.execute(
+        """
+        INSERT INTO messages (id, tenant_id, to_number, sender_id, body, encoding, segments, price_prefix,
+                              unit_price_micros, cost_micros, status)
+        SELECT (lpad(to_hex(i), 8, '0') || '-0000-7000-8000-000000000000')::uuid, $1, '+8801711000001',
+               'SHOP', 'x', 'GSM7', 1, '+880', 4000, 4000, 'QUEUED'
+        FROM generate_series(1, 20000) AS i
+        """,
+        SHOPFAST_ID,
+    )
+    await pool.execute("ANALYZE messages")
+    await pool.execute(
+        "UPDATE messages SET status = 'DELIVERED' "
+        "WHERE id < (lpad(to_hex(10001), 8, '0') || '-0000-7000-8000-000000000000')::uuid"
+    )
+
+    rows = await pool.fetch("EXPLAIN " + _CLAIM, "w-plan", timedelta(seconds=30))
+    plan = "\n".join(r[0] for r in rows)
+
+    assert "Seq Scan on messages" not in plan, plan
+    assert plan.count("using messages_dispatch_idx on messages") == 2, plan
+
+
+async def test_a_late_acceptance_after_the_message_failed_moves_no_money(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The reverse order of the slow-worker case: worker B's 400 fails and
+    refunds the message first, then worker A's late 200 arrives, then its DLR.
+    FAILED is final and the refund stands; the acceptance is logged and counted."""
+    from prometheus_client import REGISTRY
+
+    from conftest import ledger_of, post_dlr
+    from gateway.carrier import Outcome, SubmitResult
+    from gateway.dispatch import record_accepted, record_failed
+    from gateway.retry import Action, Decision
+
+    message_id = await send(client, acme)
+    slow = await claim_one(pool, "w-slow", lease_seconds=30)
+    await _expire_lease(pool, message_id)
+    retry = await claim_one(pool, "w-retry", lease_seconds=30)
+    assert slow is not None and retry is not None
+    counted_before = REGISTRY.get_sample_value("smsgw_accepted_after_failed_total") or 0.0
+
+    await record_failed(
+        pool,
+        retry,
+        SubmitResult(Outcome.REJECTED, 400, error="INVALID_DESTINATION"),
+        Decision(Action.FAIL, reason="INVALID_DESTINATION"),
+    )
+    changes = await record_accepted(pool, slow, SubmitResult(Outcome.ACCEPTED, 200, carrier_id="c-slow"))
+    dlr = await post_dlr(client, "c-slow", "DELIVRD")
+
+    assert changes == []
+    assert dlr.json() == {"result": "ignored"}
+    row = await message_row(pool, message_id)
+    assert (row["status"], row["failure_reason"]) == ("FAILED", "INVALID_DESTINATION")
+    assert await ledger_of(pool, message_id) == [("CHARGE", BD_PRICE), ("REFUND", -BD_PRICE)]
+    assert await balance_of(pool, ACME_ID) == 250_000_000
+    await assert_books_balance(pool)
+    assert REGISTRY.get_sample_value("smsgw_accepted_after_failed_total") == counted_before + 1
+    assert "after it was failed and refunded" in caplog.text
+
+
+async def test_failing_for_max_attempts_without_a_submit_leaves_no_attempt_in_flight(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    """The last allowed attempt was lost with its worker. The next claim is one
+    attempt too many: the message fails without a submit, and the claim's
+    write-ahead row must not stay behind as a submit in flight."""
+    from gateway.queries import queue_stats
+
+    message_id = await send(client, acme)
+    for worker in ("w-dead-1", "w-dead-2"):
+        assert await claim_one(pool, worker, lease_seconds=30) is not None
+        await _expire_lease(pool, message_id)
+
+    await make_dispatcher(make_settings(max_attempts=2)).run_once()
+
+    row = await message_row(pool, message_id)
+    assert (row["status"], row["failure_reason"], row["attempts"]) == ("FAILED", "MAX_ATTEMPTS_EXCEEDED", 2)
+    assert carrier.requests == []
+    assert await _attempts(pool, message_id) == [(1, "ABANDONED"), (2, "ABANDONED")]
+    assert (await queue_stats(pool))["in_flight"] == 0
+    failed_detail = await pool.fetchval(
+        "SELECT detail FROM message_events WHERE message_id = $1::uuid AND status = 'FAILED'", message_id
+    )
+    assert failed_detail["attempt"] == 2
+    assert await balance_of(pool, ACME_ID) == 250_000_000
+    await assert_books_balance(pool)
+
+
+async def test_a_429_is_recorded_even_when_the_penalty_cannot_be_applied(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    """Valkey fails between granting the token and the carrier's 429."""
+    message_id = await send(client, acme)
+    carrier.then(429, "c-ok")
+    dispatcher = make_dispatcher()
+
+    async def penalty_fails(_seconds: float) -> None:
+        raise ConnectionError("valkey is not reachable")
+
+    dispatcher._limiter.penalize = penalty_fails  # type: ignore[method-assign]
+
+    await dispatcher.run_once()
+    assert await _attempts(pool, message_id) == [(1, "RATE_LIMITED")]
+    await dispatcher.run_once()  # visible again after the backoff, not after the lease
+
+    row = await message_row(pool, message_id)
+    assert (row["status"], row["ambiguous_attempts"]) == ("SUBMITTED", 0)
+    assert await _attempts(pool, message_id) == [(1, "RATE_LIMITED"), (2, "ACCEPTED")]

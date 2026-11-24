@@ -21,9 +21,16 @@ sent" (a slow query, a busy event loop) delays some submits more than
 others and can squeeze more than 50 arrivals into one second even though
 the tokens were handed out correctly. So nothing sits between them.
 
-Why only one message is claimed ahead: fairness. A worker never holds more
-than one message that is waiting for a token, so a late OTP is at most a
-couple of slots behind, never behind a batch a worker took in advance.
+Why so little is claimed ahead: fairness. Each of a worker's lanes (two by
+default) holds at most one message that is waiting for a token, so a late
+OTP is a few slots behind, never behind a batch a worker took in advance.
+
+Why more than one lane: a claim is a committed write, and on a busy
+database it can take longer than the pacing interval. With a single
+claim -> token -> send loop the worker then misses slots it was entitled
+to. The first full run in Docker showed exactly that (41 submits/s against
+a target of 46). A second lane claims the next message while the first
+waits for its token.
 """
 
 from __future__ import annotations
@@ -49,7 +56,7 @@ from gateway.limiter import RateLimiter
 from gateway.live import LivePublisher
 from gateway.messages import StatusChange, transition
 from gateway.retry import Action, Decision, decide
-from gateway.status import SUBMITTED
+from gateway.status import FAILED, SUBMITTED
 
 log = logging.getLogger(__name__)
 
@@ -71,10 +78,20 @@ class Claimed:
 # next_tenant: among tenants that have a message ready, the one served
 #   longest ago (round robin). SKIP LOCKED lets two workers pick two
 #   different tenants at the same moment instead of queueing on one row.
+#   The LATERAL ... LIMIT 1 is one probe into messages_dispatch_idx per
+#   tenant: it stops at the tenant's first ready entry, so its cost does not
+#   grow with the size of a backlog.
 # picked: that tenant's oldest ready message (the ID is a UUIDv7, so ORDER BY
 #   id is creation order). A retried message is older than the backlog behind
 #   it, so it goes out first once its backoff has passed. SKIP LOCKED again,
 #   so workers never wait on each other's rows.
+#
+# Both read messages through `tenant_id >= X AND tenant_id <= X ... ORDER BY
+# tenant_id, id`. It looks redundant next to `tenant_id = X ORDER BY id`, and
+# it is on purpose: with the equality the planner may walk messages_pkey in id
+# order and filter every row of other tenants and every sent message, or hash
+# the whole queue. Only messages_dispatch_idx can supply this order, so the
+# plan stays an index scan that stops at the first ready row.
 # closed: an earlier attempt for this message that never got an outcome
 #   means its worker died or stalled past the lease. Mark it ABANDONED and
 #   count it as ambiguous: the carrier may have received that submit.
@@ -86,11 +103,15 @@ _CLAIM = """
 WITH next_tenant AS (
     SELECT c.tenant_id
     FROM dispatch_cursor c
-    WHERE EXISTS (
-        SELECT 1 FROM messages m
-        WHERE m.tenant_id = c.tenant_id
+    CROSS JOIN LATERAL (
+        SELECT 1
+        FROM messages m
+        WHERE m.tenant_id >= c.tenant_id AND m.tenant_id <= c.tenant_id
           AND m.status = 'QUEUED'
-          AND m.next_attempt_at <= now())
+          AND m.next_attempt_at <= now()
+        ORDER BY m.tenant_id, m.id
+        LIMIT 1
+    ) ready
     ORDER BY c.last_served_at
     LIMIT 1
     FOR UPDATE OF c SKIP LOCKED
@@ -98,10 +119,11 @@ WITH next_tenant AS (
 picked AS (
     SELECT m.id
     FROM messages m
-    WHERE m.tenant_id = (SELECT tenant_id FROM next_tenant)
+    WHERE m.tenant_id >= (SELECT tenant_id FROM next_tenant)
+      AND m.tenant_id <= (SELECT tenant_id FROM next_tenant)
       AND m.status = 'QUEUED'
       AND m.next_attempt_at <= now()
-    ORDER BY m.id
+    ORDER BY m.tenant_id, m.id
     LIMIT 1
     FOR UPDATE OF m SKIP LOCKED
 ),
@@ -152,29 +174,41 @@ async def claim_one(pool: asyncpg.Pool, worker_id: str, lease_seconds: float) ->
     )
 
 
-async def release_claim(pool: asyncpg.Pool, msg: Claimed) -> None:
+async def release_claim(pool: asyncpg.Pool, msg: Claimed, worker_id: str) -> None:
     """Undo a claim whose submit was never sent: no attempt happened.
 
-    Fenced by the attempt number, so it cannot touch a message that another
-    worker has claimed since.
+    The attempt number alone is not a safe fence, because a release lowers
+    it: after another worker claims and releases, the same number comes back.
+    What proves that nobody claimed since is this worker's own attempt row
+    still being open, because every re-claim closes it.
     """
     async with pool.acquire() as conn, conn.transaction():
         released = await conn.fetchval(
             """
-            UPDATE messages
+            UPDATE messages m
             SET attempts = attempts - 1, next_attempt_at = now(), locked_by = NULL
-            WHERE id = $1 AND status = 'QUEUED' AND attempts = $2
+            WHERE m.id = $1 AND m.status = 'QUEUED' AND m.attempts = $2
+              AND EXISTS (
+                  SELECT 1 FROM submit_attempts a
+                  WHERE a.message_id = m.id AND a.attempt_no = $2
+                    AND a.outcome IS NULL AND a.worker_id = $3)
             RETURNING true
             """,
             msg.id,
             msg.attempt,
+            worker_id,
         )
         if released:
-            await conn.execute(
-                "DELETE FROM submit_attempts WHERE message_id = $1 AND attempt_no = $2 AND outcome IS NULL",
-                msg.id,
-                msg.attempt,
-            )
+            await _delete_open_attempt(conn, msg)
+
+
+async def _delete_open_attempt(conn: asyncpg.Connection, msg: Claimed) -> None:
+    """Remove the write-ahead row of an attempt that was never sent."""
+    await conn.execute(
+        "DELETE FROM submit_attempts WHERE message_id = $1 AND attempt_no = $2 AND outcome IS NULL",
+        msg.id,
+        msg.attempt,
+    )
 
 
 async def _lock_message(conn: asyncpg.Connection, msg: Claimed) -> None:
@@ -190,12 +224,23 @@ async def _lock_message(conn: asyncpg.Connection, msg: Claimed) -> None:
 
 async def _close_attempt(
     conn: asyncpg.Connection, msg: Claimed, result: SubmitResult, carrier_id: str | None = None
-) -> None:
-    await conn.execute(
+) -> bool:
+    """Record the outcome on the attempt row. Return True if the row was still open.
+
+    A carrier_id already on the row is kept: a repeated call must not erase
+    the ID that DLRs are matched by.
+    """
+    was_open = await conn.fetchval(
         """
-        UPDATE submit_attempts
-        SET outcome = $3, finished_at = clock_timestamp(), http_status = $4, carrier_id = $5, error = $6
-        WHERE message_id = $1 AND attempt_no = $2
+        WITH before AS (
+            SELECT id, outcome FROM submit_attempts WHERE message_id = $1 AND attempt_no = $2
+        )
+        UPDATE submit_attempts a
+        SET outcome = $3, finished_at = clock_timestamp(), http_status = $4,
+            carrier_id = COALESCE($5, a.carrier_id), error = $6
+        FROM before
+        WHERE a.id = before.id
+        RETURNING before.outcome IS NULL
         """,
         msg.id,
         msg.attempt,
@@ -204,6 +249,7 @@ async def _close_attempt(
         carrier_id,
         result.error,
     )
+    return bool(was_open)
 
 
 async def record_accepted(pool: asyncpg.Pool, msg: Claimed, result: SubmitResult) -> list[StatusChange]:
@@ -220,16 +266,20 @@ async def record_accepted(pool: asyncpg.Pool, msg: Claimed, result: SubmitResult
         await lock_carrier_id(conn, carrier_id)
         await _lock_message(conn, msg)
 
-        owner = await conn.fetchval(
-            "SELECT message_id FROM submit_attempts WHERE carrier_id = $1", carrier_id
+        owner = await conn.fetchrow(
+            "SELECT message_id, attempt_no FROM submit_attempts WHERE carrier_id = $1", carrier_id
         )
-        if owner is not None and owner != msg.id:
+        owner_message = owner["message_id"] if owner is not None else None
+        if owner_message is not None and owner_message != msg.id:
             # A carrier_id must identify one message. If the carrier reuses
             # one, we cannot route its DLR; do not guess.
-            log.error("carrier_id %s already belongs to message %s, not %s", carrier_id, owner, msg.id)
+            log.error(
+                "carrier_id %s already belongs to message %s, not %s", carrier_id, owner_message, msg.id
+            )
         # carrier_id is unique across attempts. An idempotent carrier returns
-        # the same ID for a retried message: keep it on the first attempt only.
-        await _close_attempt(conn, msg, result, carrier_id if owner is None else None)
+        # the same ID for a retried message: it stays on the attempt that has it.
+        mine = owner is not None and owner_message == msg.id and owner["attempt_no"] == msg.attempt
+        await _close_attempt(conn, msg, result, carrier_id if owner is None or mine else None)
 
         changes: list[StatusChange] = []
         change = await transition(
@@ -241,16 +291,35 @@ async def record_accepted(pool: asyncpg.Pool, msg: Claimed, result: SubmitResult
         )
         if change is not None:
             changes.append(change)
-        if owner is None or owner == msg.id:
+        else:
+            await _report_late_acceptance(conn, msg, carrier_id)
+        if owner_message is None or owner_message == msg.id:
             changes.extend(await apply_pending(conn, carrier_id))
         return changes
+
+
+async def _report_late_acceptance(conn: asyncpg.Connection, msg: Claimed, carrier_id: str) -> None:
+    """A worker that outlived its lease can learn of an acceptance after another
+    attempt failed the message and refunded it. Money and status stay as they
+    are (FAILED is final and the tenant has its webhook); the case is made loud."""
+    status = await conn.fetchval("SELECT status FROM messages WHERE id = $1", msg.id)
+    if status != FAILED:
+        return
+    metrics.ACCEPTED_AFTER_FAILED.inc()
+    log.error(
+        "carrier accepted attempt %d of message %s (carrier_id %s) after it was failed and refunded",
+        msg.attempt,
+        msg.id,
+        carrier_id,
+    )
 
 
 async def record_retry(pool: asyncpg.Pool, msg: Claimed, result: SubmitResult, decision: Decision) -> None:
     """Not accepted, or unknown: make the message visible again after the backoff."""
     async with pool.acquire() as conn, conn.transaction():
         await _lock_message(conn, msg)
-        await _close_attempt(conn, msg, result)
+        # Count an ambiguous attempt only once, also when this call is repeated.
+        was_open = await _close_attempt(conn, msg, result)
         await conn.execute(
             """
             UPDATE messages
@@ -262,7 +331,7 @@ async def record_retry(pool: asyncpg.Pool, msg: Claimed, result: SubmitResult, d
             msg.id,
             msg.attempt,
             timedelta(seconds=decision.delay_seconds),
-            1 if decision.ambiguous else 0,
+            1 if decision.ambiguous and was_open else 0,
         )
 
 
@@ -272,7 +341,9 @@ async def record_failed(
     """Permanent error or no attempts left: QUEUED -> FAILED with a refund."""
     async with pool.acquire() as conn, conn.transaction():
         await _lock_message(conn, msg)
-        detail: dict[str, Any] = {"attempt": msg.attempt}
+        # Without a result nothing was sent, and the claim's attempt is undone
+        # below: the event names the last attempt that was made.
+        detail: dict[str, Any] = {"attempt": msg.attempt if result is not None else msg.attempt - 1}
         if result is not None:
             await _close_attempt(conn, msg, result)
             detail["http_status"] = result.http_status
@@ -291,7 +362,29 @@ async def record_failed(
             detail=detail,
             fence_attempt=msg.attempt,
         )
+        if change is not None and result is None:
+            change = await _undo_unsent_attempt(conn, msg, change)
         return [change] if change else []
+
+
+async def _undo_unsent_attempt(conn: asyncpg.Connection, msg: Claimed, change: StatusChange) -> StatusChange:
+    """The claim counted an attempt and wrote its row, but nothing was sent.
+
+    Without this the row would stay open for ever (a FAILED message is never
+    claimed again), showing a submit in flight that never existed. Runs after
+    the fenced failure, which needs the counter as the claim left it.
+    """
+    await _delete_open_attempt(conn, msg)
+    row = await conn.fetchrow(
+        """
+        UPDATE messages m SET attempts = m.attempts - 1
+        FROM tenants t
+        WHERE m.id = $1 AND t.id = m.tenant_id
+        RETURNING m.*, t.name AS tenant_name, t.currency
+        """,
+        msg.id,
+    )
+    return StatusChange(message=row, occurred_at=change.occurred_at)
 
 
 class Dispatcher:
@@ -319,13 +412,24 @@ class Dispatcher:
 
     async def run(self, stop: asyncio.Event) -> None:
         log.info(
-            "dispatcher %s started: target %.1f submits/s (carrier limit %d), burst %d, max in flight %d",
+            "dispatcher %s started: target %.1f submits/s (carrier limit %d), burst %d, "
+            "%d lanes, max in flight %d",
             self.worker_id,
             self._settings.carrier_target_rate,
             self._settings.carrier_rate_limit,
             self._settings.carrier_burst,
+            self._settings.worker_lanes,
             self._settings.worker_max_in_flight,
         )
+        lanes = [
+            asyncio.create_task(self._lane(stop), name=f"lane-{i}")
+            for i in range(max(1, self._settings.worker_lanes))
+        ]
+        await asyncio.gather(*lanes)
+        await self._drain()
+
+    async def _lane(self, stop: asyncio.Event) -> None:
+        """One claim -> token -> send loop. Lanes share the in-flight cap and nothing else."""
         while not stop.is_set():
             try:
                 pause = await self._tick()
@@ -336,12 +440,12 @@ class Dispatcher:
             if pause > 0:
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(stop.wait(), timeout=pause)
-        await self._drain()
 
     async def _tick(self) -> float:
         """Claim one message, wait for its token, start its submit. Return how long to pause."""
-        if len(self._tasks) >= self._settings.worker_max_in_flight:
-            await asyncio.wait(self._tasks, return_when=asyncio.FIRST_COMPLETED)
+        in_flight = set(self._tasks)  # a copy: other lanes add and remove while we wait
+        if len(in_flight) >= self._settings.worker_max_in_flight:
+            await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
             return 0.0
 
         msg = await claim_one(self._pool, self.worker_id, self._settings.lease_seconds)
@@ -354,7 +458,7 @@ class Dispatcher:
             # No token (Valkey down, or we are shutting down): the message was
             # never sent, so undo the claim instead of leaving an open attempt
             # that would later be counted as "the carrier may have it".
-            await asyncio.shield(release_claim(self._pool, msg))
+            await asyncio.shield(release_claim(self._pool, msg, self.worker_id))
             raise
         self._spawn(msg)
         return 0.0
@@ -416,8 +520,7 @@ class Dispatcher:
         metrics.SUBMIT_ATTEMPTS.labels(result.outcome.value).inc()
 
         if result.outcome is Outcome.RATE_LIMITED:
-            # The carrier's count is the one that matters. Slow every worker down.
-            await self._limiter.penalize(settings.carrier_429_penalty_seconds)
+            await self._penalize(settings.carrier_429_penalty_seconds)
 
         decision = decide(
             result,
@@ -435,6 +538,18 @@ class Dispatcher:
         else:
             changes = await self._with_retries(record_failed, msg, result, decision)
         await self._publish(changes)
+
+    async def _penalize(self, seconds: float) -> None:
+        """The carrier's count is the one that matters: slow every worker down.
+
+        Best effort. The 429 itself is a known result and is recorded whether
+        or not Valkey takes the penalty; otherwise a refused submit would wait
+        out the lease and then be counted as one the carrier may have taken.
+        """
+        try:
+            await self._limiter.penalize(seconds)
+        except Exception:
+            log.warning("could not apply the 429 penalty", exc_info=True)
 
     async def _with_retries(self, record: Any, *args: Any) -> Any:
         """Recording the result is worth a few tries: if we lose an ACCEPTED,
