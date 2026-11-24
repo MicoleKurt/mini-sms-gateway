@@ -57,7 +57,9 @@ def main() -> None:
     out = []
     for name, text in CASES:
         a = analyze(text)
-        out.append({"name": name, "text": text, "encoding": a.encoding, "units": a.units, "segments": a.segments})
+        out.append(
+            {"name": name, "text": text, "encoding": a.encoding, "units": a.units, "segments": a.segments}
+        )
     target = Path(__file__).resolve().parents[2] / "shared" / "encoding-vectors.json"
     target.write_text(json.dumps(out, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {len(out)} vectors to {target}")

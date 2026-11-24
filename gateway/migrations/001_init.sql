@@ -34,6 +34,19 @@ CREATE TABLE dispatch_cursor (
     last_served_at  timestamptz NOT NULL DEFAULT '-infinity'
 );
 
+-- A tenant without a cursor row would never be dispatched, and nothing would
+-- say so. The trigger makes that state impossible.
+CREATE FUNCTION create_dispatch_cursor() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO dispatch_cursor (tenant_id) VALUES (NEW.id);
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER tenants_create_dispatch_cursor
+    AFTER INSERT ON tenants
+    FOR EACH ROW EXECUTE FUNCTION create_dispatch_cursor();
+
 -- ---------------------------------------------------------------------------
 -- Prices: longest matching destination prefix wins.
 -- ---------------------------------------------------------------------------
@@ -91,7 +104,9 @@ CREATE INDEX messages_tenant_created_idx ON messages (tenant_id, created_at DESC
 CREATE INDEX messages_tenant_status_idx  ON messages (tenant_id, status, created_at DESC, id DESC);
 CREATE INDEX messages_created_idx        ON messages (created_at DESC, id DESC);
 CREATE INDEX messages_status_idx         ON messages (status, created_at DESC, id DESC);
-CREATE INDEX messages_client_ref_idx     ON messages (tenant_id, client_ref) WHERE client_ref IS NOT NULL;
+CREATE INDEX messages_client_ref_idx     ON messages (client_ref, tenant_id) WHERE client_ref IS NOT NULL;
+CREATE INDEX messages_to_number_idx      ON messages (to_number);
+CREATE INDEX messages_batch_idx          ON messages (batch_id) WHERE batch_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- Status history. One row per status a message has entered.
@@ -107,6 +122,9 @@ CREATE TABLE message_events (
     -- This index turns that rule into something the database refuses to break.
     CONSTRAINT message_events_once_per_status UNIQUE (message_id, status)
 );
+
+-- For the dashboard's per-second throughput chart.
+CREATE INDEX message_events_occurred_idx ON message_events (occurred_at);
 
 -- ---------------------------------------------------------------------------
 -- Submit attempts. Written BEFORE the HTTP call (outcome NULL = in flight),
@@ -135,6 +153,9 @@ CREATE TABLE submit_attempts (
 -- A carrier_id identifies exactly one accepted attempt. DLRs are matched here.
 CREATE UNIQUE INDEX submit_attempts_carrier_id_idx
     ON submit_attempts (carrier_id) WHERE carrier_id IS NOT NULL;
+
+CREATE INDEX submit_attempts_started_idx   ON submit_attempts (started_at);
+CREATE INDEX submit_attempts_in_flight_idx ON submit_attempts (message_id) WHERE outcome IS NULL;
 
 -- ---------------------------------------------------------------------------
 -- Delivery receipts as received from the carrier (an inbox).
