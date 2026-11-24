@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from gateway import metrics, queries
 from gateway.accept import accept_messages
 from gateway.api.deps import PoolDep, PricesDep, PublisherDep, SettingsDep, get_hub, require_admin
-from gateway.api.tenant import StatusFilter, accept_response, as_utc, parse_message_id
+from gateway.api.tenant import StatusFilter, accept_response, as_utc, parse_message_id, storable_query
 from gateway.errors import not_found
 from gateway.live import LiveHub
 from gateway.messages import event_json, iso, message_json
@@ -57,9 +57,9 @@ async def list_messages(
         pool,
         tenant_id=tenant_id,
         status=status,
-        created_from=as_utc(created_from),
-        created_to=as_utc(created_to),
-        search=q.strip() if q else None,
+        created_from=as_utc(created_from, "created_from"),
+        created_to=as_utc(created_to, "created_to"),
+        search=storable_query(q.strip(), "q") if q else None,
         limit=limit,
         cursor=cursor,
     )
@@ -153,7 +153,7 @@ async def send_as_tenant(
         max_segments=settings.max_segments,
     )
     if not result.replayed:
-        metrics.MESSAGES_ACCEPTED.labels(tenant.slug).inc()
+        metrics.MESSAGES_ACCEPTED.inc()
         await publisher.publish_all(result.live_events)
     return accept_response(result)
 

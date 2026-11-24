@@ -5,12 +5,16 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+log = logging.getLogger(__name__)
 
 
 class ApiError(Exception):
@@ -70,7 +74,44 @@ def _detail_from_pydantic(err: dict[str, Any]) -> dict[str, Any]:
     return detail
 
 
+class InternalErrorMiddleware:
+    """The last resort: an exception no handler knows becomes the documented
+    500 envelope. The traceback goes to the log, never into the response.
+
+    A plain ASGI middleware rather than an exception handler for Exception:
+    Starlette re-raises after such a handler has answered, and a streaming
+    response (the SSE stream) must not be wrapped in a buffering middleware.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = False
+
+        async def tracking_send(message: Message) -> None:
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, tracking_send)
+        except Exception:
+            log.exception("unhandled error in %s %s", scope.get("method"), scope.get("path"))
+            if started:
+                # Headers are already sent; all that is left is to end the connection.
+                raise
+            body = {"error": {"code": "INTERNAL_ERROR", "message": "Internal error."}}
+            await JSONResponse(body, status_code=500)(scope, receive, send)
+
+
 def install_error_handlers(app: FastAPI) -> None:
+    app.add_middleware(InternalErrorMiddleware)
+
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
         return JSONResponse(exc.body(), status_code=exc.status_code)

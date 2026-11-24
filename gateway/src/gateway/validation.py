@@ -83,7 +83,7 @@ def validate_message(
     analysis: SmsAnalysis | None = None
     if text == "":
         errors.append(_err("text", "EMPTY_TEXT", "Must not be empty."))
-    elif not _is_storable(text):
+    elif not is_storable(text):
         errors.append(_err("text", "INVALID_VALUE", "Contains a NUL character or an unpaired surrogate."))
     else:
         analysis = analyze(text)
@@ -96,7 +96,7 @@ def validate_message(
                 )
             )
 
-    if client_ref is not None and not (1 <= len(client_ref) <= MAX_CLIENT_REF and _is_storable(client_ref)):
+    if client_ref is not None and not (1 <= len(client_ref) <= MAX_CLIENT_REF and is_storable(client_ref)):
         errors.append(_err("client_ref", "INVALID_VALUE", f"Must be 1 to {MAX_CLIENT_REF} characters."))
 
     if errors or price is None or analysis is None:
@@ -104,7 +104,7 @@ def validate_message(
     return MessageDraft(to, sender, text, client_ref, analysis, price), []
 
 
-def _is_storable(value: str) -> bool:
+def is_storable(value: str) -> bool:
     """PostgreSQL text cannot hold NUL, and UTF-8 cannot encode half a surrogate pair."""
     if "\x00" in value:
         return False

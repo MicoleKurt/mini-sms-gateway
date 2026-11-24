@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -15,6 +16,7 @@ from gateway.api.deps import PoolDep, PricesDep, PublisherDep, SettingsDep, Tena
 from gateway.errors import not_found, validation_error
 from gateway.messages import event_json, message_json
 from gateway.models import BatchIn, MessageIn, WebhookIn
+from gateway.validation import MAX_CLIENT_REF, is_storable
 from gateway.webhooks import is_valid_callback_url
 
 router = APIRouter(prefix="/v1", tags=["tenant"])
@@ -27,10 +29,37 @@ def accept_response(result: AcceptResult) -> JSONResponse:
     return JSONResponse(result.body, status_code=result.status_code, headers=headers)
 
 
-def as_utc(value: datetime | None) -> datetime | None:
-    """A timestamp without an offset is read as UTC, as the API documents."""
-    if value is not None and value.tzinfo is None:
+def as_utc(value: datetime | None, field: str) -> datetime | None:
+    """A timestamp without an offset is read as UTC, as the API documents.
+
+    The conversion happens here so that a time which leaves the datetime range
+    in UTC (year 1 at +14:00, year 9999 at -12:00) is a 422 and not an
+    overflow inside the database driver.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
+    try:
+        return value.astimezone(UTC)
+    except OverflowError as exc:
+        raise validation_error(
+            [{"field": field, "code": "INVALID_VALUE", "message": "Out of range."}]
+        ) from exc
+
+
+def storable_query(value: str | None, field: str) -> str | None:
+    """A query value is compared with a text column, which cannot hold NUL."""
+    if value is not None and not is_storable(value):
+        raise validation_error(
+            [
+                {
+                    "field": field,
+                    "code": "INVALID_VALUE",
+                    "message": "Contains a NUL character or an unpaired surrogate.",
+                }
+            ]
+        )
     return value
 
 
@@ -62,7 +91,7 @@ async def send_message(
         max_segments=settings.max_segments,
     )
     if not result.replayed:
-        metrics.MESSAGES_ACCEPTED.labels(tenant.slug).inc()
+        metrics.MESSAGES_ACCEPTED.inc()
         await publisher.publish_all(result.live_events)
     return accept_response(result)
 
@@ -87,7 +116,7 @@ async def send_batch(
         max_segments=settings.max_segments,
     )
     if not result.replayed:
-        metrics.MESSAGES_ACCEPTED.labels(tenant.slug).inc(len(body.messages))
+        metrics.MESSAGES_ACCEPTED.inc(len(body.messages))
         await publisher.publish_all(result.live_events)
     return accept_response(result)
 
@@ -99,7 +128,7 @@ async def list_messages(
     status: StatusFilter | None = None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
-    client_ref: str | None = None,
+    client_ref: Annotated[str | None, Query(min_length=1, max_length=MAX_CLIENT_REF)] = None,
     batch_id: uuid.UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=1000)] = 50,
     cursor: str | None = None,
@@ -108,9 +137,9 @@ async def list_messages(
         pool,
         tenant_id=tenant.id,
         status=status,
-        created_from=as_utc(created_from),
-        created_to=as_utc(created_to),
-        client_ref=client_ref,
+        created_from=as_utc(created_from, "created_from"),
+        created_to=as_utc(created_to, "created_to"),
+        client_ref=storable_query(client_ref, "client_ref"),
         batch_id=batch_id,
         limit=limit,
         cursor=cursor,
@@ -156,15 +185,26 @@ async def get_ledger(
 
 @router.get("/webhook")
 async def get_webhook(tenant: TenantDep, pool: PoolDep) -> dict[str, Any]:
-    url = await pool.fetchval("SELECT callback_url FROM tenants WHERE id = $1", tenant.id)
-    return {"callback_url": url}
+    row = await pool.fetchrow("SELECT callback_url, webhook_secret FROM tenants WHERE id = $1", tenant.id)
+    return {"callback_url": row["callback_url"], "signing_secret": row["webhook_secret"]}
 
 
 @router.put("/webhook")
 async def put_webhook(body: WebhookIn, tenant: TenantDep, pool: PoolDep) -> dict[str, Any]:
+    """Set or clear the callback URL. A tenant without a signing secret gets one
+    here, so every callback it receives can be verified."""
     if body.callback_url is not None and not is_valid_callback_url(body.callback_url):
         raise validation_error(
             [{"field": "callback_url", "code": "INVALID_VALUE", "message": "Must be an http or https URL."}]
         )
-    await pool.execute("UPDATE tenants SET callback_url = $2 WHERE id = $1", tenant.id, body.callback_url)
-    return {"callback_url": body.callback_url}
+    row = await pool.fetchrow(
+        """
+        UPDATE tenants SET callback_url = $2, webhook_secret = COALESCE(webhook_secret, $3)
+        WHERE id = $1
+        RETURNING callback_url, webhook_secret
+        """,
+        tenant.id,
+        body.callback_url,
+        "whsec_" + secrets.token_urlsafe(32),
+    )
+    return {"callback_url": row["callback_url"], "signing_secret": row["webhook_secret"]}

@@ -209,3 +209,98 @@ async def test_signed_but_malformed_dlr_is_a_422(client: httpx.AsyncClient, pool
     assert response.status_code == 422
     assert response.json()["error"]["details"][0]["field"] == "status"
     assert await pool.fetchval("SELECT count(*) FROM dlr_receipts") == 0
+
+
+# --- the sweep for a DLR that never came ------------------------------------------------
+
+
+async def _submitted_days_ago(pool: asyncpg.Pool, message_id: str, days: int) -> None:
+    await pool.execute(
+        "UPDATE messages SET submitted_at = now() - make_interval(days => $2) WHERE id = $1::uuid",
+        message_id,
+        days,
+    )
+
+
+async def test_a_message_without_a_dlr_expires_after_the_validity_period(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    from conftest import BD_PRICE, ledger_of
+    from gateway.sweeper import sweep
+
+    await pool.execute("UPDATE tenants SET callback_url = 'http://tenant.example/hook'")
+    lost = await _submitted(client, acme, carrier, make_dispatcher, "c-lost")
+    waiting = await _submitted(client, acme, carrier, make_dispatcher, "c-waiting")
+    await _submitted_days_ago(pool, lost, 2)
+
+    assert await sweep(pool, wait_seconds=86_400, batch_size=100) == 1
+
+    row = await message_row(pool, lost)
+    assert (row["status"], row["failure_reason"]) == ("EXPIRED", "NO_DLR")
+    detail = await pool.fetchval(
+        "SELECT detail FROM message_events WHERE message_id = $1::uuid AND status = 'EXPIRED'", lost
+    )
+    assert detail == {"reason": "NO_DLR"}
+    assert await ledger_of(pool, lost) == [("CHARGE", BD_PRICE)]  # the carrier took it: no refund
+    assert (
+        await pool.fetchval("SELECT count(*) FROM webhook_deliveries WHERE message_id = $1::uuid", lost) == 1
+    )
+    # Inside its validity period: untouched.
+    assert (await message_row(pool, waiting))["status"] == "SUBMITTED"
+
+
+async def test_a_dlr_after_the_sweep_changes_nothing(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    from gateway.sweeper import sweep
+
+    message_id = await _submitted(client, acme, carrier, make_dispatcher, "c-late")
+    await _submitted_days_ago(pool, message_id, 2)
+    await sweep(pool, wait_seconds=86_400, batch_size=100)
+    before = await message_row(pool, message_id)
+
+    late = await post_dlr(client, "c-late", "DELIVRD")
+
+    assert late.json() == {"result": "ignored"}
+    assert await message_row(pool, message_id) == before
+    assert await event_statuses(pool, message_id) == ["ACCEPTED", "QUEUED", "SUBMITTED", "EXPIRED"]
+    assert await _dlr_rows(pool) == [("c-late", "DELIVRD", "IGNORED")]
+
+
+async def test_sweeps_in_several_processes_expire_each_message_once(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    from gateway.sweeper import sweep
+
+    ids = [await _submitted(client, acme, carrier, make_dispatcher, f"c-{i}") for i in range(12)]
+    for message_id in ids:
+        await _submitted_days_ago(pool, message_id, 2)
+
+    counts = await asyncio.gather(*(sweep(pool, wait_seconds=86_400, batch_size=3) for _ in range(3)))
+
+    assert sum(counts) == 12
+    expired_events = await pool.fetchval("SELECT count(*) FROM message_events WHERE status = 'EXPIRED'")
+    assert expired_events == 12
+    assert await pool.fetchval("SELECT count(*) FROM messages WHERE status = 'EXPIRED'") == 12
+
+
+async def test_the_sweeper_loop_runs_until_stopped(
+    client: httpx.AsyncClient, pool: asyncpg.Pool, acme: dict, carrier: FakeCarrier, make_dispatcher
+) -> None:
+    from conftest import make_settings
+    from gateway.sweeper import DlrSweeper
+
+    message_id = await _submitted(client, acme, carrier, make_dispatcher, "c-loop")
+    await _submitted_days_ago(pool, message_id, 2)
+    stop = asyncio.Event()
+    sweeper = DlrSweeper(pool=pool, settings=make_settings(dlr_sweep_interval_seconds=0.05))
+
+    task = asyncio.create_task(sweeper.run(stop))
+    for _ in range(100):
+        if (await message_row(pool, message_id))["status"] == "EXPIRED":
+            break
+        await asyncio.sleep(0.02)
+    stop.set()
+    await asyncio.wait_for(task, 2.0)
+
+    assert (await message_row(pool, message_id))["status"] == "EXPIRED"

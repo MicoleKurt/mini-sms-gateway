@@ -99,3 +99,16 @@ async def test_internal_send_goes_through_the_same_checks(
     assert detail["message"]["status"] == "QUEUED"
     assert [entry["kind"] for entry in detail["ledger"]] == ["CHARGE"]
     assert set(detail) == {"message", "events", "attempts", "dlrs", "ledger", "webhooks"}
+
+
+async def test_open_metrics_do_not_name_tenants(
+    client: httpx.AsyncClient, acme: dict, shopfast: dict
+) -> None:
+    """/metrics needs no credentials, so it must not tell anyone which tenants exist."""
+    await send(client, acme)
+    await client.post("/v1/messages/batch", json={"messages": [sms()] * 3}, headers=shopfast)
+
+    text = (await client.get("/metrics")).text
+
+    assert "acme-bank" not in text and "shopfast" not in text
+    assert "tenant=" not in text

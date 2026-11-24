@@ -5,17 +5,27 @@ from __future__ import annotations
 import base64
 import json
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import asyncpg
 
 from gateway import billing, metrics
-from gateway.errors import validation_error
+from gateway.errors import ApiError, validation_error
 from gateway.messages import SELECT_MESSAGE, iso
 from gateway.status import ALL_STATUSES, FINAL_STATUSES
 
 # --- keyset cursors ----------------------------------------------------------
+
+#: Our own cursors are well under this. A longer one is not from this API.
+MAX_CURSOR_LENGTH = 256
+_MAX_LEDGER_ID = 2**63 - 1
+
+
+def _invalid_cursor() -> ApiError:
+    return validation_error(
+        [{"field": "cursor", "code": "INVALID_VALUE", "message": "Not a cursor from this API."}]
+    )
 
 
 def encode_cursor(*parts: Any) -> str:
@@ -24,16 +34,16 @@ def encode_cursor(*parts: Any) -> str:
 
 
 def decode_cursor(cursor: str, expected_parts: int) -> list[str]:
+    if len(cursor) > MAX_CURSOR_LENGTH:
+        raise _invalid_cursor()
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
         parts = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
         if not isinstance(parts, list) or len(parts) != expected_parts:
             raise ValueError
         return [str(p) for p in parts]
-    except (ValueError, UnicodeError) as exc:
-        raise validation_error(
-            [{"field": "cursor", "code": "INVALID_VALUE", "message": "Not a cursor from this API."}]
-        ) from exc
+    except (ValueError, UnicodeError, RecursionError) as exc:
+        raise _invalid_cursor() from exc
 
 
 # --- messages ------------------------------------------------------------------
@@ -87,13 +97,13 @@ async def list_messages(
     if cursor is not None:
         created_at, message_id = decode_cursor(cursor, 2)
         try:
-            where(
-                "(m.created_at, m.id) < ({}, {})", datetime.fromisoformat(created_at), uuid.UUID(message_id)
-            )
-        except ValueError as exc:
-            raise validation_error(
-                [{"field": "cursor", "code": "INVALID_VALUE", "message": "Not a cursor from this API."}]
-            ) from exc
+            # Converted here, not by asyncpg: a time that leaves the datetime
+            # range in UTC must be a 422, not an overflow inside the driver.
+            after = datetime.fromisoformat(created_at)
+            after = (after if after.tzinfo else after.replace(tzinfo=UTC)).astimezone(UTC)
+            where("(m.created_at, m.id) < ({}, {})", after, uuid.UUID(message_id))
+        except (ValueError, OverflowError) as exc:
+            raise _invalid_cursor() from exc
 
     args.append(limit + 1)
     sql = SELECT_MESSAGE
@@ -159,10 +169,10 @@ async def list_ledger(
     if cursor is not None:
         try:
             after_id = int(decode_cursor(cursor, 1)[0])
+            if not 0 <= after_id <= _MAX_LEDGER_ID:
+                raise ValueError("outside bigint")
         except ValueError as exc:
-            raise validation_error(
-                [{"field": "cursor", "code": "INVALID_VALUE", "message": "Not a cursor from this API."}]
-            ) from exc
+            raise _invalid_cursor() from exc
     rows = await pool.fetch(
         """
         SELECT id, message_id, kind, amount_micros, balance_after_micros, created_at
@@ -233,14 +243,17 @@ async def queue_stats(pool: asyncpg.Pool) -> dict[str, int]:
             (SELECT count(*) FROM messages WHERE status = 'QUEUED') AS depth,
             (SELECT count(*) FROM submit_attempts WHERE outcome IS NULL) AS in_flight,
             -- Age of the oldest message that is ready to send. One index
-            -- probe per tenant instead of a scan of the whole queue.
+            -- probe per tenant instead of a scan of the whole queue. The
+            -- range form makes messages_dispatch_idx the only index that
+            -- supplies the order (see dispatch._CLAIM).
             (SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(oldest.created_at)) * 1000, 0)
              FROM dispatch_cursor c
              CROSS JOIN LATERAL (
                  SELECT m.created_at
                  FROM messages m
-                 WHERE m.tenant_id = c.tenant_id AND m.status = 'QUEUED' AND m.next_attempt_at <= now()
-                 ORDER BY m.id
+                 WHERE m.tenant_id >= c.tenant_id AND m.tenant_id <= c.tenant_id
+                   AND m.status = 'QUEUED' AND m.next_attempt_at <= now()
+                 ORDER BY m.tenant_id, m.id
                  LIMIT 1) oldest) AS oldest_age_ms
         """
     )

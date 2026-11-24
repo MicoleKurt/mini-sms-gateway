@@ -12,6 +12,7 @@ from gateway import dlr, metrics
 from gateway.api.deps import PoolDep, PublisherDep, SettingsDep
 from gateway.errors import ApiError, validation_error
 from gateway.status import DLR_STATUS
+from gateway.validation import is_storable
 
 router = APIRouter(tags=["carrier"])
 
@@ -49,7 +50,7 @@ async def carrier_dlr(
 def _parse(raw: bytes) -> tuple[str, str, datetime]:
     try:
         body = json.loads(raw)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
         raise validation_error(
             [{"field": "body", "code": "INVALID_VALUE", "message": "Body is not valid JSON."}]
         ) from exc
@@ -63,7 +64,7 @@ def _parse(raw: bytes) -> tuple[str, str, datetime]:
     if (
         not isinstance(carrier_id, str)
         or not (1 <= len(carrier_id) <= MAX_CARRIER_ID)
-        or "\x00" in carrier_id
+        or not is_storable(carrier_id)
     ):
         errors.append(
             {"field": "carrier_id", "code": "INVALID_VALUE", "message": "Must be a non-empty string."}
@@ -75,19 +76,26 @@ def _parse(raw: bytes) -> tuple[str, str, datetime]:
             {"field": "status", "code": "INVALID_VALUE", "message": "Must be DELIVRD, UNDELIV or EXPIRED."}
         )
 
-    timestamp: datetime | None = None
-    raw_timestamp = body.get("timestamp")
-    if isinstance(raw_timestamp, str):
-        try:
-            timestamp = datetime.fromisoformat(raw_timestamp)
-        except ValueError:
-            timestamp = None
+    timestamp = _parse_timestamp(body.get("timestamp"))
     if timestamp is None:
         errors.append({"field": "timestamp", "code": "INVALID_VALUE", "message": "Must be an ISO 8601 time."})
-    elif timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=UTC)
 
     if errors:
         raise validation_error(errors)
     assert isinstance(carrier_id, str) and isinstance(status, str) and timestamp is not None
     return carrier_id, status, timestamp
+
+
+def _parse_timestamp(value: Any) -> datetime | None:
+    """An ISO 8601 time in UTC, or None. A time without an offset is read as UTC.
+
+    Converted here so that a time which leaves the datetime range in UTC is
+    refused as invalid instead of overflowing in the database driver.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+        return (parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)).astimezone(UTC)
+    except (ValueError, OverflowError):
+        return None
