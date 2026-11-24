@@ -102,7 +102,7 @@ stateDiagram-v2
     QUEUED --> FAILED: 400, or no attempts left (refund)
     SUBMITTED --> DELIVERED: DLR DELIVRD
     SUBMITTED --> UNDELIVERED: DLR UNDELIV
-    SUBMITTED --> EXPIRED: DLR EXPIRED
+    SUBMITTED --> EXPIRED: DLR EXPIRED, or no DLR in 24 h
     DELIVERED --> [*]
     UNDELIVERED --> [*]
     EXPIRED --> [*]
@@ -124,16 +124,23 @@ a late or repeated event finds nothing to update.
 | Queue, fairness, leases, crash recovery | [`dispatch.py`](gateway/src/gateway/dispatch.py) | `test_dispatch.py` |
 | Carrier rate limit across workers | [`limiter.py`](gateway/src/gateway/limiter.py) | `test_dispatch.py` |
 | Retry rules | [`retry.py`](gateway/src/gateway/retry.py), [`carrier.py`](gateway/src/gateway/carrier.py) | `test_dispatch.py` |
-| DLRs: signature, early, duplicate, forward-only status | [`dlr.py`](gateway/src/gateway/dlr.py), [`messages.py`](gateway/src/gateway/messages.py) | `test_dlr.py` |
+| DLRs: signature, early, duplicate, forward-only status, lost | [`dlr.py`](gateway/src/gateway/dlr.py), [`messages.py`](gateway/src/gateway/messages.py), [`sweeper.py`](gateway/src/gateway/sweeper.py) | `test_dlr.py` |
 | Tenant webhooks with backoff, isolated | [`webhooks.py`](gateway/src/gateway/webhooks.py) | `test_webhooks.py` |
 | Dashboard | [`dashboard/`](dashboard) | `npm run test` |
 | Mock carrier | [`mock-carrier/`](mock-carrier) | `mock-carrier/tests` |
 | Load script | [`loadtest/load_test.py`](loadtest/load_test.py) | output below |
 | Migrations and seed | [`migrations/`](gateway/migrations), [`migrate.py`](gateway/src/gateway/migrate.py), [`seed.py`](gateway/src/gateway/seed.py) | run by `docker compose up` |
 
-Bonus items that are in: HMAC signature on tenant webhooks, Prometheus metrics
-(`/metrics`: queue depth, submit outcomes, DLR delay), and an optional
+Bonus items that are in: HMAC signature on tenant webhooks (the tenant reads
+its secret from `GET /v1/webhook`), Prometheus metrics, and an optional
 de-duplicating mode in the mock carrier that makes the timeout risk measurable.
+
+Metrics are per process, so each process serves its own:
+
+| Where | What |
+|---|---|
+| API, `GET /metrics` on port 8000 (no credentials, so no tenant labels) | messages accepted; queue depth and submits in flight, read at scrape time; DLRs received by result; DLR delay and final statuses for DLRs the API applied |
+| Dispatchers and the webhook worker, port 9464 inside the compose network (not published on the host) | dispatcher: submit outcomes and durations, final statuses it set, acceptances recorded after a message had failed; webhook worker: callback results, messages expired without a DLR. The queue gauges are only on the API: a worker does not refresh them |
 
 ## Load test
 
@@ -255,7 +262,7 @@ Progress lines are thinned to one per 30 seconds here; the complete output is in
 ## Tests
 
 ```
-docker compose run --rm tests        # gateway: 112 tests against real PostgreSQL and Valkey
+docker compose run --rm tests        # gateway: 173 tests against real PostgreSQL and Valkey
 ```
 
 Without Docker, with a PostgreSQL database whose name ends in `_test`:
@@ -304,6 +311,7 @@ gateway/          FastAPI app, dispatcher, webhook worker, migrations, tests
     limiter.py      GCRA rate limit in Valkey
     retry.py        the retry policy, as one table
     dlr.py          delivery receipts: signature, de-duplication, early arrival
+    sweeper.py      expires messages whose DLR never came
     messages.py     transition(): the only place a status changes
     billing.py      charge, refund, balance report
     webhooks.py     tenant callbacks from an outbox
@@ -338,7 +346,14 @@ docs/             API reference, screenshots
 - **Every attempt counts toward the limit of 6**, whatever the cause, 429 included.
 - **A refund follows a final failure even after an ambiguous attempt.** The
   carrier may have delivered that message; we cannot prove it, so we do not
-  charge for it.
+  charge for it. If a worker that outlived its lease later records that the
+  carrier did accept it, the message stays `FAILED` and refunded; the case is
+  logged as an error and counted in `smsgw_accepted_after_failed_total`.
+- **A DLR that never comes ends in `EXPIRED`.** A message still `SUBMITTED`
+  24 hours after its submit (`DLR_WAIT_SECONDS`, the carrier's validity period)
+  is moved to `EXPIRED` with reason `NO_DLR` by a sweep in the webhook process.
+  The charge is kept, because the carrier accepted the message. A DLR that
+  arrives later is stored and ignored.
 - **A status event's time is our clock**, when we recorded the change. The
   carrier's own timestamp is kept in the event detail.
 - **API keys are stored as SHA-256.** Only the first eight characters are kept in
@@ -351,8 +366,6 @@ docs/             API reference, screenshots
   (transactional before bulk) are the next step.
 - No second carrier, routing or failover; no scheduled messages; no templates.
 - Callback URLs are not checked against private address ranges (SSRF).
-- A message whose DLR never arrives stays `SUBMITTED`. A sweeper that expires
-  it after the carrier's validity period is missing.
 - Idempotency keys and finished webhook rows are never purged.
 - The dashboard has no login; it relies on the proxy holding the admin token.
 - Metrics are per process (two API workers report separately); there is no

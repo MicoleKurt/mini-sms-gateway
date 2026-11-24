@@ -13,7 +13,7 @@ flowchart LR
     D -- "token" --> V[(Valkey<br/>rate limit,<br/>live events)]
     D -- "POST /submit" --> C{{Carrier}}
     C -- "signed DLR" --> API
-    W -- "outbox" --> PG
+    W -- "outbox,<br/>lost-DLR sweep" --> PG
     W -- "callback" --> T
     API -- SSE --> UI[Dashboard]
 ```
@@ -53,10 +53,13 @@ carries a `carrier_id` we never saw and is stored unmatched. A timeout is the
 same case and takes the same path.
 
 What holds anyway: the message is not lost, is charged once, and reaches one
-final status. What is left is a duplicate SMS, only for messages with an
-ambiguous attempt, each one flagged in the database and the dashboard. In the
-load run that is about 1% (the carrier's timeout share), and the carrier's
-`/stats` reports the same number as `duplicate_accepts`.
+final status: the one its DLR reports or, if no DLR arrives within the
+carrier's validity period (`DLR_WAIT_SECONDS`, 24 hours), `EXPIRED` with reason
+`NO_DLR`, set by a sweep in the webhook process. What is left is a duplicate
+SMS, only for messages with an ambiguous attempt, each one flagged in the
+database and the dashboard. In the load run that is about 1% (the carrier's
+timeout share), and the carrier's `/stats` reports the same number as
+`duplicate_accepts`.
 
 The real fix needs the carrier: de-duplication on `message_id` or a status
 query. The mock has the first behind `IDEMPOTENT_SUBMIT=true`; then duplicates
@@ -65,7 +68,14 @@ are 0 and the "lost" DLR is matched too, because the retry returns the original
 timeout and a missing OTP is worse than a repeated one. The policy is one table
 (`RULES` in `retry.py`). One consequence: a message that fails for good after
 an ambiguous attempt is refunded although the carrier may have delivered it. I
-cannot prove delivery, so that doubt is ours to pay for.
+cannot prove delivery, so that doubt is ours to pay for. The proof can still
+arrive later: a worker that outlives its lease can record the carrier's
+acceptance after another attempt failed and refunded the message. The message
+stays `FAILED` and refunded (a final status is final, and the tenant has its
+webhook); the case is logged as an error, counted in
+`smsgw_accepted_after_failed_total`, and visible as an `ACCEPTED` attempt on a
+message with `ambiguous_attempts > 0`
+(`test_a_late_acceptance_after_the_message_failed_moves_no_money`).
 
 ## 2. At-least-once and exactly-once
 
@@ -90,7 +100,8 @@ A dispatcher claims one message, takes a rate-limit token, and sends at once.
 The claim picks, among tenants with a message ready, the one served longest ago
 (`dispatch_cursor`), then that tenant's oldest ready message. No worker holds a
 batch, so an OTP that arrives during a 10,000-message campaign is behind at
-most one message per worker and one slot per active tenant. The limiter is GCRA:
+most one message per dispatcher lane (two lanes per worker) and one slot per
+active tenant. The limiter is GCRA:
 slots are about 22 ms apart instead of 50 at the top of each second. A retried
 message is older than the backlog behind it, so it returns to the front of its
 tenant's queue after its backoff.
@@ -104,8 +115,15 @@ With 50 tenants that all have a backlog, each gets 1/50 of the carrier, and an
 OTP waits up to 50 slots, about 1.1 s (`test_fairness_with_fifty_tenants`).
 Shares are equal, not weighted, and an OTP is not preferred over another
 tenant's bulk message. Next: a weight per tenant and a traffic class per
-message, so transactional traffic keeps a reserved share. The claim probes each
-tenant once; for thousands of tenants I would keep the active set in Valkey.
+message, so transactional traffic keeps a reserved share. The claim makes one
+probe into the queue index per tenant and stops at that tenant's first ready
+message, so the backlog behind that message does not add to its cost. It still
+reads the leased or backing-off rows in front of the first ready one: with
+100,000 messages queued for one tenant, it took 0.27 ms with 300 leased rows at
+the front and 0.51 ms with 5,000. Behind 100,000 already sent it took 0.30 ms
+after a vacuum and 1.35 ms before one (an earlier version walked the primary key
+past every sent message: 13 and 20 ms). For thousands of tenants I would keep
+the active set in Valkey.
 
 ## 4. What breaks first at 1,000 messages per second
 
