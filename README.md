@@ -401,5 +401,7 @@ docs/             API reference, screenshots
 ## AI tools
 
 This project was built with Claude Code. Commits it wrote carry a
-`Co-Authored-By: Claude` trailer. The session transcript belongs in
-[docs/ai-transcript](docs/ai-transcript).
+`Co-Authored-By: Claude` trailer. The session that built it is in
+[docs/ai-transcript](docs/ai-transcript): every message I sent during the
+build, what the model did in reply, and the scripts and reports of the
+sub-agents it ran. Its README says what was left out and why.
